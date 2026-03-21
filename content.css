@@ -1,0 +1,183 @@
+/* ============================================================
+   RedBot — Injected styles for badges and detail cards
+   ============================================================ */
+
+/* ---- Badge ---- */
+
+.redbot-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 4px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  cursor: pointer;
+  vertical-align: middle;
+  line-height: 1.4;
+  position: relative;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  text-decoration: none !important;
+}
+
+.redbot-badge:hover {
+  transform: scale(1.15);
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.15);
+}
+
+.redbot-green {
+  background: rgba(34, 197, 94, 0.12);
+  color: #22c55e;
+  border: 1px solid rgba(34, 197, 94, 0.25);
+}
+
+.redbot-yellow {
+  background: rgba(245, 158, 11, 0.12);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.25);
+}
+
+.redbot-red {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.redbot-err {
+  background: rgba(100, 116, 139, 0.12);
+  color: #64748b;
+  border: 1px solid rgba(100, 116, 139, 0.25);
+}
+
+.redbot-spin {
+  background: rgba(139, 92, 246, 0.12);
+  color: #8b5cf6;
+  border: 1px solid rgba(139, 92, 246, 0.25);
+  animation: redbot-pulse 1.4s ease-in-out infinite;
+  cursor: default;
+}
+
+@keyframes redbot-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+/* ---- Detail card ---- */
+
+.redbot-card {
+  position: absolute;
+  z-index: 2147483647;
+  width: 340px;
+  background: #12121f;
+  border: 1px solid #2a2a4a;
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: #e2e8f0;
+  overflow: hidden;
+  margin-top: 6px;
+}
+
+.redbot-card-hdr {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+}
+
+.redbot-card-human {
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.15), transparent);
+  border-bottom: 1px solid rgba(34, 197, 94, 0.2);
+}
+
+.redbot-card-suspicious {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.15), transparent);
+  border-bottom: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.redbot-card-bot {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.15), transparent);
+  border-bottom: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.redbot-card-user {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.redbot-card-pct {
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.redbot-card-body {
+  padding: 12px 16px 16px;
+}
+
+.redbot-card-label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin-bottom: 10px;
+  opacity: 0.7;
+}
+
+.redbot-card-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.redbot-chip {
+  font-size: 10px;
+  color: #94a3b8;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+
+.redbot-card-sigs {
+  margin-top: 6px;
+}
+
+.redbot-card-sigs-title {
+  font-size: 10px;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin-bottom: 6px;
+}
+
+.redbot-sig {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.redbot-sig-d {
+  color: #94a3b8;
+  font-size: 11px;
+  text-align: right;
+  max-width: 55%;
+  word-break: break-word;
+}
+
+.redbot-card-llm {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid #2a2a4a;
+}
+
+.redbot-card-llm p {
+  font-size: 12px;
+  color: #cbd5e1;
+  line-height: 1.5;
+  margin: 4px 0 0;
+}

@@ -1,0 +1,256 @@
+/* ============================================================
+   RedBot — Popup styles
+   ============================================================ */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  width: 360px;
+  min-height: 420px;
+  background: #0c0c18;
+  color: #e2e8f0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+}
+
+/* ---- Header ---- */
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, #161628, #0f1a2e);
+  border-bottom: 1px solid #1e1e3a;
+}
+
+.logo {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+}
+
+.header h1 {
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.subtitle {
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 1px;
+}
+
+/* ---- Summary bar ---- */
+
+.summary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: #1e1e3a;
+  border-bottom: 1px solid #1e1e3a;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 4px;
+  background: #0c0c18;
+}
+
+.stat-val {
+  font-size: 22px;
+  font-weight: 800;
+  color: #fff;
+}
+
+.val-red    { color: #ef4444; }
+.val-yellow { color: #f59e0b; }
+.val-green  { color: #22c55e; }
+
+.stat-lbl {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+/* ---- Sections ---- */
+
+.section {
+  padding: 14px 20px 16px;
+  border-bottom: 1px solid #131325;
+}
+
+.section-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+h2 {
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ---- User list ---- */
+
+.user-list {
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.user-list::-webkit-scrollbar { width: 4px; }
+.user-list::-webkit-scrollbar-thumb {
+  background: #2a2a4a;
+  border-radius: 2px;
+}
+
+.empty {
+  text-align: center;
+  padding: 20px;
+  color: #475569;
+  font-size: 12px;
+}
+
+.uitem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 10px;
+  border-radius: 8px;
+  margin-bottom: 3px;
+  background: rgba(255, 255, 255, 0.02);
+  transition: background 0.15s;
+}
+
+.uitem:hover { background: rgba(255, 255, 255, 0.06); }
+
+.uinfo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.udot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.udot.human     { background: #22c55e; }
+.udot.suspicious { background: #f59e0b; }
+.udot.bot       { background: #ef4444; }
+.udot.known     { background: #8b5cf6; }
+
+.uname {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.uscore {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.uscore.human     { color: #22c55e; }
+.uscore.suspicious { color: #f59e0b; }
+.uscore.bot       { color: #ef4444; }
+.uscore.known     { color: #8b5cf6; }
+
+.utier {
+  font-size: 10px;
+  color: #475569;
+  margin-left: 4px;
+}
+
+/* ---- Buttons ---- */
+
+.btn {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.btn-primary {
+  background: #3b82f6;
+  color: #fff;
+}
+.btn-primary:hover { background: #2563eb; }
+
+.btn-green {
+  background: #22c55e;
+  color: #fff;
+}
+.btn-green:hover { background: #16a34a; }
+
+.btn-ghost {
+  background: rgba(255, 255, 255, 0.04);
+  color: #94a3b8;
+  border: 1px solid #1e1e3a;
+}
+
+.btn-ghost:hover {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.25);
+}
+
+.full { width: 100%; margin-top: 10px; }
+
+/* ---- Settings inputs ---- */
+
+label {
+  display: block;
+  font-size: 12px;
+  color: #94a3b8;
+  margin-bottom: 6px;
+  margin-top: 10px;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+}
+
+input[type="password"] {
+  flex: 1;
+  padding: 8px 12px;
+  background: #161628;
+  border: 1px solid #1e1e3a;
+  border-radius: 6px;
+  color: #e2e8f0;
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+input[type="password"]:focus {
+  border-color: #3b82f6;
+}
+
+.hint {
+  margin-top: 6px;
+  font-size: 10px;
+  color: #475569;
+  line-height: 1.4;
+}
+
+.hint a {
+  color: #3b82f6;
+  text-decoration: none;
+}
+
+.hint a:hover { text-decoration: underline; }

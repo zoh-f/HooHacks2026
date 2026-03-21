@@ -1,10 +1,29 @@
 {
-  "name": "Bot Detector",
-  "description": "Detect bots on social media",
+  "name": "RedBot",
+  "description": "Detect Reddit bots with tiered heuristic and AI analysis",
   "version": "1.0",
   "manifest_version": 3,
+  "permissions": ["activeTab", "storage"],
+  "host_permissions": [
+    "*://*.reddit.com/*",
+    "https://generativelanguage.googleapis.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.reddit.com/*"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ],
   "action": {
-    "default_popup": "hello.html",
+    "default_popup": "popup.html",
     "default_icon": "rbot.webp"
+  },
+  "icons": {
+    "128": "rbot.webp"
   }
 }
