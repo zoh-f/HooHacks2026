@@ -1,10 +1,15 @@
 document.addEventListener('DOMContentLoaded', () => {
   loadResults();
   loadApiKey();
+  loadRedditAuth();
+  loadBotSettings();
 
   document.getElementById('btnScan').addEventListener('click', triggerScan);
   document.getElementById('btnSave').addEventListener('click', saveApiKey);
   document.getElementById('btnClear').addEventListener('click', clearCache);
+  document.getElementById('btnLogin').addEventListener('click', handleRedditLogin);
+  document.getElementById('botAction').addEventListener('change', saveBotSettings);
+  document.getElementById('botThreshold').addEventListener('change', saveBotSettings);
 });
 
 // ---- Load and display scan results for the active tab ----
@@ -29,10 +34,15 @@ async function loadResults() {
     let bots = 0, sus = 0, humans = 0;
     list.innerHTML = '';
 
+    let rateLimited = 0;
     for (const [username, r] of entries) {
       let cat, display;
 
-      if (r.score < 0 && r.errorType) {
+      if (r.errorType === 'ratelimited') {
+        cat = 'ratelimited';
+        rateLimited++;
+        display = '\u{23F3} Rate Limited';
+      } else if (r.score < 0 && r.errorType) {
         cat = 'known';
         bots++;
         const labels = { suspended: '\u{1F6A8} Suspended', banned: '\u{1F528} Banned', deleted: '\u{1F6AB} Deleted' };
@@ -45,7 +55,7 @@ async function loadResults() {
       } else if (r.score >= 40) {
         cat = 'bot'; bots++;
         display = `${r.score}%`;
-      } else if (r.score >= 10) {
+      } else if (r.score >= 20) {
         cat = 'suspicious'; sus++;
         display = `${r.score}%`;
       } else {
@@ -62,9 +72,16 @@ async function loadResults() {
         </div>
         <div>
           <span class="uscore ${cat}">${display}</span>
-          <span class="utier">T${r.tier}</span>
+          ${r.errorType !== 'ratelimited' ? `<span class="utier">T${r.tier}</span>` : ''}
         </div>`;
       list.appendChild(row);
+    }
+
+    if (rateLimited > 0) {
+      const notice = document.createElement('div');
+      notice.className = 'rate-limit-notice';
+      notice.textContent = `Reddit is rate limiting requests. ${rateLimited} user(s) could not be scanned — try again in a minute.`;
+      list.prepend(notice);
     }
 
     setSummary(entries.length, bots, sus, humans);
@@ -86,7 +103,7 @@ function triggerScan() {
     chrome.tabs.sendMessage(tabs[0].id, { type: 'triggerScan' });
 
     const btn = document.getElementById('btnScan');
-    btn.textContent = 'Scanning…';
+    btn.textContent = 'Scanning\u2026';
     btn.disabled = true;
 
     setTimeout(() => {
@@ -112,6 +129,80 @@ function saveApiKey() {
   chrome.storage.sync.set({ geminiApiKey: key }, () => {
     flash('btnSave', 'Saved!', 'Save');
   });
+}
+
+// ---- Reddit OAuth ----
+
+function loadRedditAuth() {
+  chrome.runtime.sendMessage({ type: 'getRedirectUrl' }, res => {
+    if (res?.url) {
+      document.getElementById('redirectUri').textContent = res.url;
+    }
+  });
+
+  chrome.runtime.sendMessage({ type: 'getRedditAuth' }, res => {
+    if (chrome.runtime.lastError) return;
+    const btn = document.getElementById('btnLogin');
+    const status = document.getElementById('authStatus');
+    const clientInput = document.getElementById('clientId');
+
+    if (res?.loggedIn) {
+      btn.textContent = 'Logout';
+      btn.className = 'btn btn-ghost';
+      status.textContent = '\u2713 Logged in \u2014 using authenticated requests (higher rate limit)';
+      status.style.color = '#22c55e';
+      if (res.clientId) clientInput.value = res.clientId;
+    } else {
+      btn.textContent = 'Login';
+      btn.className = 'btn btn-primary';
+      status.textContent = 'Not logged in \u2014 limited API requests';
+      status.style.color = '';
+      if (res?.clientId) clientInput.value = res.clientId;
+    }
+  });
+}
+
+function handleRedditLogin() {
+  const btn = document.getElementById('btnLogin');
+
+  if (btn.textContent === 'Logout') {
+    chrome.runtime.sendMessage({ type: 'redditLogout' }, () => loadRedditAuth());
+    return;
+  }
+
+  const clientId = document.getElementById('clientId').value.trim();
+  if (!clientId) {
+    flash('btnLogin', 'Need Client ID', 'Login');
+    return;
+  }
+
+  btn.textContent = 'Connecting\u2026';
+  btn.disabled = true;
+
+  chrome.runtime.sendMessage({ type: 'redditLogin', clientId }, res => {
+    btn.disabled = false;
+    if (res?.error) {
+      btn.textContent = 'Failed';
+      setTimeout(() => { btn.textContent = 'Login'; }, 2000);
+    } else {
+      loadRedditAuth();
+    }
+  });
+}
+
+// ---- Bot action settings ----
+
+function loadBotSettings() {
+  chrome.storage.sync.get(['botAction', 'botThreshold'], res => {
+    if (res.botAction) document.getElementById('botAction').value = res.botAction;
+    if (res.botThreshold != null) document.getElementById('botThreshold').value = res.botThreshold;
+  });
+}
+
+function saveBotSettings() {
+  const action = document.getElementById('botAction').value;
+  const threshold = parseInt(document.getElementById('botThreshold').value) || 40;
+  chrome.storage.sync.set({ botAction: action, botThreshold: threshold });
 }
 
 // ---- Clear cache ----

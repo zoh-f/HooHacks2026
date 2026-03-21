@@ -185,18 +185,25 @@
 /* ---- Profile page panel ---- */
 
 #redbot-profile-panel {
-  width: 100%;
-  max-width: 700px;
-  margin: 16px auto;
+  position: fixed;
+  top: 80px;
+  right: 24px;
+  width: 320px;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
   background: #12121f;
   border: 1px solid #2a2a4a;
   border-radius: 14px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   color: #e2e8f0;
-  overflow: hidden;
   z-index: 999999;
-  position: relative;
+}
+
+#redbot-profile-panel::-webkit-scrollbar { width: 4px; }
+#redbot-profile-panel::-webkit-scrollbar-thumb {
+  background: #2a2a4a;
+  border-radius: 2px;
 }
 
 .redbot-pp-hdr {
@@ -206,6 +213,34 @@
   padding: 16px 20px;
   background: linear-gradient(135deg, #161628, #0f1a2e);
   border-bottom: 1px solid #1e1e3a;
+  cursor: grab;
+  user-select: none;
+}
+
+.redbot-pp-hdr:active {
+  cursor: grabbing;
+}
+
+.redbot-pp-close {
+  margin-left: auto;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: rgba(255, 255, 255, 0.06);
+  color: #64748b;
+  font-size: 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+.redbot-pp-close:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
 }
 
 .redbot-pp-logo {
@@ -387,4 +422,105 @@
   background: rgba(34, 197, 94, 0.06);
   border: 1px solid rgba(34, 197, 94, 0.15);
   border-radius: 8px;
+}
+
+/* ---- Rate-limited states ---- */
+
+.redbot-ratelimit {
+  background: rgba(59, 130, 246, 0.12);
+  color: #3b82f6;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+}
+
+.redbot-card-ratelimit {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.15), transparent);
+  border-bottom: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+.redbot-pp-ratelimit {
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+.redbot-pp-ratelimit .redbot-pp-score { color: #3b82f6; }
+
+.redbot-pp-ratelimit-msg {
+  text-align: center;
+  padding: 16px;
+  color: #3b82f6;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.redbot-pp-retry-btn {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  padding: 10px;
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.redbot-pp-retry-btn:hover {
+  background: rgba(59, 130, 246, 0.25);
+}
+
+/* ---- Comment action styles (minimize / hide) ---- */
+
+.redbot-comment-minimized {
+  max-height: 48px !important;
+  overflow: hidden !important;
+  opacity: 0.3;
+  transition: max-height 0.3s, opacity 0.3s;
+}
+
+.redbot-minimize-notice,
+.redbot-hidden-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  margin: 4px 0;
+}
+
+.redbot-minimize-notice {
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  color: #f59e0b;
+}
+
+.redbot-hidden-placeholder {
+  background: rgba(100, 116, 139, 0.08);
+  border: 1px solid rgba(100, 116, 139, 0.15);
+  color: #64748b;
+}
+
+.redbot-expand-btn,
+.redbot-reveal-btn {
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  padding: 2px 10px;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  flex-shrink: 0;
+  margin-left: 8px;
+  transition: background 0.15s;
+}
+
+.redbot-expand-btn:hover,
+.redbot-reveal-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
 }

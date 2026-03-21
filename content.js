@@ -10,6 +10,29 @@
   const ATTR = 'data-redbot';
   const PROCESSED = new Set();
 
+  // ---- Settings (synced from popup) ----
+
+  let botAction = 'badge';
+  let botThreshold = 40;
+  let settingsReady = false;
+
+  function loadSettings() {
+    return new Promise(resolve => {
+      chrome.storage.sync.get(['botAction', 'botThreshold'], res => {
+        botAction = res.botAction || 'badge';
+        botThreshold = res.botThreshold ?? 40;
+        settingsReady = true;
+        resolve();
+      });
+    });
+  }
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'sync') return;
+    if (changes.botAction) botAction = changes.botAction.newValue || 'badge';
+    if (changes.botThreshold) botThreshold = changes.botThreshold.newValue ?? 40;
+  });
+
   // ---- Reddit version detection ----
 
   function isOldReddit() {
@@ -97,7 +120,11 @@
     const b = document.createElement('span');
     b.className = 'redbot-badge';
 
-    if (score < 0 && result?.errorType) {
+    if (result?.errorType === 'ratelimited') {
+      b.classList.add('redbot-ratelimit');
+      b.textContent = '\u{23F3}';
+      b.title = 'Rate limited — try again in a bit';
+    } else if (score < 0 && result?.errorType) {
       b.classList.add('redbot-err');
       if (result.errorType === 'suspended') {
         b.textContent = '\u{1F6A8}';
@@ -116,7 +143,7 @@
       b.classList.add('redbot-err');
       b.textContent = '?';
       b.title = 'Scan error';
-    } else if (score < 10) {
+    } else if (score < 20) {
       b.classList.add('redbot-green');
       b.textContent = score + '%';
       b.title = `Likely human (${score}%) — Tier ${tier}`;
@@ -137,50 +164,65 @@
 
   function makeCard(result) {
     const r = result;
-    let cls, label;
-    if (r.score < 0 && r.errorType === 'suspended') { cls = 'bot'; label = 'Suspended'; }
-    else if (r.score < 0 && r.errorType === 'banned') { cls = 'bot'; label = 'Banned'; }
-    else if (r.score < 0 && r.errorType === 'deleted') { cls = 'bot'; label = 'Deleted'; }
-    else if (r.score >= 40) { cls = 'bot'; label = 'Likely Bot'; }
-    else if (r.score >= 10) { cls = 'suspicious'; label = 'Suspicious'; }
-    else { cls = 'human'; label = 'Likely Human'; }
-
     const card = document.createElement('div');
     card.className = 'redbot-card';
-    card.innerHTML = `
-      <div class="redbot-card-hdr redbot-card-${cls}">
-        <span class="redbot-card-user">u/${r.meta?.username || '?'}</span>
-        <span class="redbot-card-pct">${r.score}%</span>
-      </div>
-      <div class="redbot-card-body">
-        <div class="redbot-card-label">${label}</div>
-        <div class="redbot-card-chips">
-          ${r.meta?.ageDays != null ? `<span class="redbot-chip">Age: ${r.meta.ageDays}d</span>` : ''}
-          ${r.meta?.totalKarma != null ? `<span class="redbot-chip">Karma: ${r.meta.totalKarma.toLocaleString()}</span>` : ''}
-          <span class="redbot-chip">Tier ${r.tier}</span>
-          ${r.t1Score != null ? `<span class="redbot-chip">T1: ${r.t1Score}</span>` : ''}
-          ${r.t2Score != null ? `<span class="redbot-chip">T2: ${r.t2Score}</span>` : ''}
-          ${r.t3Score != null ? `<span class="redbot-chip">T3: ${r.t3Score}</span>` : ''}
+
+    if (r.errorType === 'ratelimited') {
+      card.innerHTML = `
+        <div class="redbot-card-hdr redbot-card-ratelimit">
+          <span class="redbot-card-user">u/${r.meta?.username || '?'}</span>
+          <span class="redbot-card-pct">\u{23F3}</span>
         </div>
-        <div class="redbot-card-sigs">
-          <div class="redbot-card-sigs-title">Signals</div>
-          ${(r.signals || []).map(s => `
-            <div class="redbot-sig">
-              <span>${s.name}</span>
-              <span class="redbot-sig-d">${s.detail || ''}</span>
-            </div>`).join('')}
+        <div class="redbot-card-body">
+          <div class="redbot-card-label" style="color:#3b82f6">Rate Limited</div>
+          <p style="font-size:12px;color:#94a3b8;line-height:1.5;margin-top:8px">
+            Reddit is rate limiting requests. Please wait a minute and try scanning again.
+          </p>
+        </div>`;
+    } else {
+      let cls, label;
+      if (r.score < 0 && r.errorType === 'suspended') { cls = 'bot'; label = 'Suspended'; }
+      else if (r.score < 0 && r.errorType === 'banned') { cls = 'bot'; label = 'Banned'; }
+      else if (r.score < 0 && r.errorType === 'deleted') { cls = 'bot'; label = 'Deleted'; }
+      else if (r.score >= 40) { cls = 'bot'; label = 'Likely Bot'; }
+      else if (r.score >= 20) { cls = 'suspicious'; label = 'Suspicious'; }
+      else { cls = 'human'; label = 'Likely Human'; }
+
+      card.innerHTML = `
+        <div class="redbot-card-hdr redbot-card-${cls}">
+          <span class="redbot-card-user">u/${r.meta?.username || '?'}</span>
+          <span class="redbot-card-pct">${r.score}%</span>
         </div>
-        ${r.llmReasoning ? `
-          <div class="redbot-card-llm">
-            <div class="redbot-card-sigs-title">AI Analysis</div>
-            <p>${r.llmReasoning}</p>
-          </div>` : ''}
-        ${r.llmSkipped ? `
-          <div class="redbot-card-llm">
-            <div class="redbot-card-sigs-title">AI Analysis Skipped</div>
-            <p>${r.llmReason || 'No API key'}</p>
-          </div>` : ''}
-      </div>`;
+        <div class="redbot-card-body">
+          <div class="redbot-card-label">${label}</div>
+          <div class="redbot-card-chips">
+            ${r.meta?.ageDays != null ? `<span class="redbot-chip">Age: ${r.meta.ageDays}d</span>` : ''}
+            ${r.meta?.totalKarma != null ? `<span class="redbot-chip">Karma: ${r.meta.totalKarma.toLocaleString()}</span>` : ''}
+            <span class="redbot-chip">Tier ${r.tier}</span>
+            ${r.t1Score != null ? `<span class="redbot-chip">T1: ${r.t1Score}</span>` : ''}
+            ${r.t2Score != null ? `<span class="redbot-chip">T2: ${r.t2Score}</span>` : ''}
+            ${r.t3Score != null ? `<span class="redbot-chip">T3: ${r.t3Score}</span>` : ''}
+          </div>
+          <div class="redbot-card-sigs">
+            <div class="redbot-card-sigs-title">Signals</div>
+            ${(r.signals || []).map(s => `
+              <div class="redbot-sig">
+                <span>${s.name}</span>
+                <span class="redbot-sig-d">${s.detail || ''}</span>
+              </div>`).join('')}
+          </div>
+          ${r.llmReasoning ? `
+            <div class="redbot-card-llm">
+              <div class="redbot-card-sigs-title">AI Analysis</div>
+              <p>${r.llmReasoning}</p>
+            </div>` : ''}
+          ${r.llmSkipped ? `
+            <div class="redbot-card-llm">
+              <div class="redbot-card-sigs-title">AI Analysis Skipped</div>
+              <p>${r.llmReason || 'No API key'}</p>
+            </div>` : ''}
+        </div>`;
+    }
 
     // Close when clicking outside
     const close = e => {
@@ -191,6 +233,49 @@
     };
     setTimeout(() => document.addEventListener('click', close, true), 0);
     return card;
+  }
+
+  // ---- Comment actions (minimize / hide) ----
+
+  function applyCommentAction(el, result) {
+    if (botAction === 'badge' || botAction === 'off') return;
+    if (result.score < 0 || result.score < botThreshold) return;
+
+    const comment =
+      el.closest('shreddit-comment') ||
+      el.closest('.comment') ||
+      el.closest('.Comment') ||
+      el.closest('[data-testid="comment"]');
+    if (!comment || comment.hasAttribute('data-redbot-action')) return;
+    comment.setAttribute('data-redbot-action', botAction);
+
+    if (botAction === 'hide') {
+      const placeholder = document.createElement('div');
+      placeholder.className = 'redbot-hidden-placeholder';
+      placeholder.innerHTML =
+        `<span>Comment hidden by RedBot (${result.score}% bot likelihood)</span>` +
+        `<button class="redbot-reveal-btn">Show</button>`;
+      placeholder.querySelector('.redbot-reveal-btn').addEventListener('click', () => {
+        comment.style.display = '';
+        placeholder.remove();
+        comment.removeAttribute('data-redbot-action');
+      });
+      comment.before(placeholder);
+      comment.style.display = 'none';
+    } else if (botAction === 'minimize') {
+      const notice = document.createElement('div');
+      notice.className = 'redbot-minimize-notice';
+      notice.innerHTML =
+        `<span>Minimized by RedBot (${result.score}% bot likelihood)</span>` +
+        `<button class="redbot-expand-btn">Expand</button>`;
+      notice.querySelector('.redbot-expand-btn').addEventListener('click', () => {
+        comment.classList.remove('redbot-comment-minimized');
+        notice.remove();
+        comment.removeAttribute('data-redbot-action');
+      });
+      comment.before(notice);
+      comment.classList.add('redbot-comment-minimized');
+    }
   }
 
   // ---- Scan queue ----
@@ -229,6 +314,8 @@
         document.querySelectorAll('.redbot-card').forEach(c => c.remove());
         badge.after(makeCard(result));
       });
+
+      applyCommentAction(el, result);
     } catch (err) {
       console.error(`[RedBot] Error scanning u/${username}:`, err);
       dot.remove();
@@ -244,6 +331,7 @@
   // ---- Page scanning ----
 
   function scanPage() {
+    if (botAction === 'off') return;
     const els = getUsernameElements();
     const newUsers = els.filter(e => !PROCESSED.has(e.username));
     console.log(`[RedBot] Page scan: found ${els.length} usernames, ${newUsers.length} new`);
@@ -269,7 +357,34 @@
     return !!getProfileUsername();
   }
 
+  function initPanelDrag(panel, handle) {
+    let dragging = false, startX, startY, origX, origY;
+
+    handle.addEventListener('mousedown', e => {
+      if (e.target.closest('.redbot-pp-close')) return;
+      dragging = true;
+      startX = e.clientX;
+      startY = e.clientY;
+      const rect = panel.getBoundingClientRect();
+      origX = rect.left;
+      origY = rect.top;
+      e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', e => {
+      if (!dragging) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      panel.style.left = `${origX + dx}px`;
+      panel.style.top = `${origY + dy}px`;
+      panel.style.right = 'auto';
+    });
+
+    document.addEventListener('mouseup', () => { dragging = false; });
+  }
+
   async function injectProfilePanel() {
+    if (botAction === 'off') return;
     const username = getProfileUsername();
     if (!username || document.getElementById('redbot-profile-panel')) return;
 
@@ -278,30 +393,22 @@
     const panel = document.createElement('div');
     panel.id = 'redbot-profile-panel';
     panel.innerHTML = `
-      <div class="redbot-pp-hdr">
+      <div class="redbot-pp-hdr" id="redbot-pp-drag-handle">
         <img src="${chrome.runtime.getURL('rbot.webp')}" class="redbot-pp-logo" alt="RedBot">
         <div>
           <div class="redbot-pp-title">RedBot Analysis</div>
           <div class="redbot-pp-user">u/${username}</div>
         </div>
+        <button class="redbot-pp-close" id="redbot-pp-close" title="Close">\u2715</button>
       </div>
       <div class="redbot-pp-body">
         <div class="redbot-pp-loading">Analyzing...</div>
       </div>`;
 
-    const target =
-      document.querySelector('[data-testid="profile-header"]') ||
-      document.querySelector('shreddit-profile-header') ||
-      document.querySelector('.side') ||
-      document.querySelector('#siteTable') ||
-      document.body.querySelector('main') ||
-      document.body;
+    document.body.appendChild(panel);
 
-    if (target === document.body || target === document.body.querySelector('main')) {
-      document.body.prepend(panel);
-    } else {
-      target.parentElement.insertBefore(panel, target);
-    }
+    panel.querySelector('#redbot-pp-close').addEventListener('click', () => panel.remove());
+    initPanelDrag(panel, panel.querySelector('#redbot-pp-drag-handle'));
 
     try {
       const result = await chrome.runtime.sendMessage({
@@ -318,12 +425,41 @@
   }
 
   function renderProfileResult(panel, username, r) {
+    if (r.errorType === 'ratelimited') {
+      panel.querySelector('.redbot-pp-body').innerHTML = `
+        <div class="redbot-pp-score-row redbot-pp-ratelimit">
+          <div>
+            <span class="redbot-pp-score">\u{23F3}</span>
+            <span class="redbot-pp-label">Rate Limited</span>
+          </div>
+        </div>
+        <div class="redbot-pp-ratelimit-msg">
+          Reddit is rate limiting requests right now.<br>
+          Please wait a minute and try again.
+        </div>
+        <button class="redbot-pp-retry-btn" id="redbot-retry-btn">Retry Analysis</button>`;
+
+      panel.querySelector('#redbot-retry-btn').addEventListener('click', async () => {
+        const btn = panel.querySelector('#redbot-retry-btn');
+        btn.textContent = 'Retrying…';
+        btn.disabled = true;
+        try {
+          const result = await chrome.runtime.sendMessage({ type: 'analyzeUser', username });
+          renderProfileResult(panel, username, result);
+        } catch (err) {
+          btn.textContent = 'Still rate limited — try again';
+          btn.disabled = false;
+        }
+      });
+      return;
+    }
+
     let cls, label;
     if (r.score < 0 && r.errorType === 'suspended') { cls = 'bot'; label = 'Suspended'; }
     else if (r.score < 0 && r.errorType === 'banned') { cls = 'bot'; label = 'Banned'; }
     else if (r.score < 0 && r.errorType === 'deleted') { cls = 'bot'; label = 'Deleted'; }
     else if (r.score >= 40) { cls = 'bot'; label = 'Likely Bot'; }
-    else if (r.score >= 10) { cls = 'suspicious'; label = 'Suspicious'; }
+    else if (r.score >= 20) { cls = 'suspicious'; label = 'Suspicious'; }
     else { cls = 'human'; label = 'Likely Human'; }
 
     const scoreDisplay = r.score < 0 ? '--' : `${r.score}%`;
@@ -427,6 +563,7 @@
       const oldPanel = document.getElementById('redbot-profile-panel');
       if (oldPanel) oldPanel.remove();
       setTimeout(() => {
+        if (botAction === 'off') return;
         scanPage();
         if (isProfilePage()) injectProfilePanel();
       }, 1500);
@@ -444,9 +581,12 @@
 
   observer.observe(document.body, { childList: true, subtree: true });
 
-  // ---- Initial scan ----
-  scanPage();
-  if (isProfilePage()) {
-    setTimeout(injectProfilePanel, 500);
-  }
+  // ---- Initial scan (deferred until settings load) ----
+  loadSettings().then(() => {
+    if (botAction === 'off') return;
+    scanPage();
+    if (isProfilePage()) {
+      setTimeout(injectProfilePanel, 500);
+    }
+  });
 })();
