@@ -156,6 +156,17 @@ h2 {
   font-weight: 500;
 }
 
+.uname-link {
+  color: #e2e8f0;
+  text-decoration: none;
+  transition: color 0.15s;
+}
+
+.uname-link:hover {
+  color: #3b82f6;
+  text-decoration: underline;
+}
+
 .uscore {
   font-size: 12px;
   font-weight: 700;

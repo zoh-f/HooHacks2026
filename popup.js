@@ -56,7 +56,7 @@ function loadResults() {
       row.innerHTML = `
         <div class="uinfo">
           <div class="udot ${cat}"></div>
-          <span class="uname">u/${username}</span>
+          <a class="uname uname-link" href="https://www.reddit.com/user/${username}" target="_blank">u/${username}</a>
         </div>
         <div>
           <span class="uscore ${cat}">${display}</span>

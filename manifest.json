@@ -25,5 +25,11 @@
   },
   "icons": {
     "128": "rbot.webp"
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["rbot.webp"],
+      "matches": ["*://*.reddit.com/*"]
+    }
+  ]
 }

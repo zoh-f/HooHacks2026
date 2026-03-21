@@ -443,6 +443,37 @@ async function analyzeUser(username) {
   }
 }
 
+// ----- Deep analysis (forced Tier 3) -----
+
+async function deepAnalyzeUser(username) {
+  console.log(`[RedBot] Deep analysis — running all tiers for u/${username}`);
+  try {
+    const aboutData = await fetchUserAbout(username);
+    const tier1 = runTier1(aboutData);
+    const commentsData = await fetchUserComments(username);
+    const tier2 = runTier2(commentsData, tier1);
+    const tier3 = await runTier3(aboutData, commentsData, tier2);
+
+    setCache(username, tier3);
+    console.log(`[RedBot] Deep analysis complete for u/${username} — score=${tier3.score}`);
+    return tier3;
+  } catch (err) {
+    console.error(`[RedBot] Deep analysis failed for u/${username}:`, err.message);
+
+    let errorType = 'error';
+    if (err.message === 'suspended') errorType = 'suspended';
+    else if (err.message === 'banned') errorType = 'banned';
+    else if (err.message === 'not_found') errorType = 'deleted';
+
+    const result = {
+      score: -1, signals: [], tier: 0,
+      error: err.message, errorType, meta: { username },
+    };
+    setCache(username, result);
+    return result;
+  }
+}
+
 // ----- Message handling -----
 
 const tabResults = new Map();
@@ -452,6 +483,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     console.log(`[RedBot] Message: analyzeUser — u/${msg.username}`);
     const tabId = sender.tab?.id;
     analyzeUser(msg.username).then(result => {
+      if (tabId) {
+        if (!tabResults.has(tabId)) tabResults.set(tabId, {});
+        tabResults.get(tabId)[msg.username] = result;
+      }
+      sendResponse(result);
+    });
+    return true;
+  }
+
+  if (msg.type === 'deepAnalyze') {
+    console.log(`[RedBot] Deep analysis requested for u/${msg.username}`);
+    deepAnalyzeUser(msg.username).then(result => {
+      const tabId = sender.tab?.id;
       if (tabId) {
         if (!tabResults.has(tabId)) tabResults.set(tabId, {});
         tabResults.get(tabId)[msg.username] = result;
