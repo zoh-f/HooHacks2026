@@ -146,10 +146,11 @@ h2 {
   flex-shrink: 0;
 }
 
-.udot.human     { background: #22c55e; }
-.udot.suspicious { background: #f59e0b; }
-.udot.bot       { background: #ef4444; }
-.udot.known     { background: #8b5cf6; }
+.udot.human       { background: #22c55e; }
+.udot.suspicious  { background: #f59e0b; }
+.udot.bot         { background: #ef4444; }
+.udot.known       { background: #8b5cf6; }
+.udot.ratelimited { background: #3b82f6; }
 
 .uname {
   font-size: 13px;
@@ -172,10 +173,23 @@ h2 {
   font-weight: 700;
 }
 
-.uscore.human     { color: #22c55e; }
-.uscore.suspicious { color: #f59e0b; }
-.uscore.bot       { color: #ef4444; }
-.uscore.known     { color: #8b5cf6; }
+.uscore.human       { color: #22c55e; }
+.uscore.suspicious  { color: #f59e0b; }
+.uscore.bot         { color: #ef4444; }
+.uscore.known       { color: #8b5cf6; }
+.uscore.ratelimited { color: #3b82f6; }
+
+.rate-limit-notice {
+  text-align: center;
+  padding: 8px 12px;
+  margin-bottom: 6px;
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 8px;
+  font-size: 11px;
+  color: #3b82f6;
+  line-height: 1.4;
+}
 
 .utier {
   font-size: 10px;

@@ -39,6 +39,7 @@ async function drainQueue() {
   try {
     const res = await fetch(url);
     console.log(`[RedBot] Fetching: ${url}`);
+    if (res.status === 429) throw new Error('ratelimited');
     if (res.status === 404) throw new Error('not_found');
     if (res.status === 403) throw new Error('suspended');
     if (res.status === 451) throw new Error('banned');
@@ -122,20 +123,6 @@ function runTier1(aboutData) {
   } else if (randomish.test(name) || underscoreNum.test(name)) {
     score += 10;
     signals.push({ name: 'Random-looking name', detail: name, pts: 10 });
-  }
-
-  // Default avatar (10 pts)
-  const icon = d.icon_img || d.snoovatar_img || '';
-  if (!icon || icon.includes('default') || icon.includes('snoo_default')) {
-    score += 10;
-    signals.push({ name: 'Default avatar', detail: 'No custom avatar', pts: 10 });
-  }
-
-  // No bio (10 pts)
-  const bio = d.subreddit?.public_description || '';
-  if (!bio.trim()) {
-    score += 10;
-    signals.push({ name: 'No bio', detail: 'Empty profile description', pts: 10 });
   }
 
   // Email not verified (10 pts)
@@ -426,7 +413,8 @@ async function analyzeUser(username) {
     console.error(`[RedBot] Analysis failed for u/${username}:`, err.message);
 
     let errorType = 'error';
-    if (err.message === 'suspended') errorType = 'suspended';
+    if (err.message === 'ratelimited') errorType = 'ratelimited';
+    else if (err.message === 'suspended') errorType = 'suspended';
     else if (err.message === 'banned') errorType = 'banned';
     else if (err.message === 'not_found') errorType = 'deleted';
 
@@ -438,7 +426,7 @@ async function analyzeUser(username) {
       errorType,
       meta: { username },
     };
-    setCache(username, result);
+    if (errorType !== 'ratelimited') setCache(username, result);
     return result;
   }
 }
@@ -461,7 +449,8 @@ async function deepAnalyzeUser(username) {
     console.error(`[RedBot] Deep analysis failed for u/${username}:`, err.message);
 
     let errorType = 'error';
-    if (err.message === 'suspended') errorType = 'suspended';
+    if (err.message === 'ratelimited') errorType = 'ratelimited';
+    else if (err.message === 'suspended') errorType = 'suspended';
     else if (err.message === 'banned') errorType = 'banned';
     else if (err.message === 'not_found') errorType = 'deleted';
 
@@ -469,7 +458,7 @@ async function deepAnalyzeUser(username) {
       score: -1, signals: [], tier: 0,
       error: err.message, errorType, meta: { username },
     };
-    setCache(username, result);
+    if (errorType !== 'ratelimited') setCache(username, result);
     return result;
   }
 }
