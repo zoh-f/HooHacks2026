@@ -19,6 +19,105 @@ function setCache(username, data) {
   cache.set(username, { data, ts: Date.now() });
 }
 
+// ----- Reddit OAuth -----
+
+async function getRedditToken() {
+  const data = await chrome.storage.local.get([
+    'redditToken', 'redditTokenExpiry', 'redditRefresh', 'redditClientId',
+  ]);
+  if (!data.redditToken) return null;
+
+  if (data.redditTokenExpiry && Date.now() > data.redditTokenExpiry - 60_000) {
+    if (data.redditRefresh && data.redditClientId) {
+      try {
+        return await refreshRedditToken(data.redditRefresh, data.redditClientId);
+      } catch (e) {
+        console.warn('[RedBot] Token refresh failed:', e);
+        return null;
+      }
+    }
+    return null;
+  }
+
+  return data.redditToken;
+}
+
+async function refreshRedditToken(refreshToken, clientId) {
+  const res = await fetch('https://www.reddit.com/api/v1/access_token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': `Basic ${btoa(clientId + ':')}`,
+    },
+    body: `grant_type=refresh_token&refresh_token=${refreshToken}`,
+  });
+
+  if (!res.ok) throw new Error(`Token refresh failed: ${res.status}`);
+  const tokenData = await res.json();
+  if (tokenData.error) throw new Error(tokenData.error);
+
+  await chrome.storage.local.set({
+    redditToken: tokenData.access_token,
+    redditTokenExpiry: Date.now() + tokenData.expires_in * 1000,
+  });
+
+  return tokenData.access_token;
+}
+
+async function redditLogin(clientId) {
+  const redirectUri = chrome.identity.getRedirectURL();
+  const state = crypto.randomUUID();
+
+  const authUrl =
+    `https://www.reddit.com/api/v1/authorize?` +
+    `client_id=${encodeURIComponent(clientId)}` +
+    `&response_type=code` +
+    `&state=${state}` +
+    `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+    `&duration=permanent` +
+    `&scope=read`;
+
+  const responseUrl = await chrome.identity.launchWebAuthFlow({
+    url: authUrl,
+    interactive: true,
+  });
+
+  const url = new URL(responseUrl);
+  const code = url.searchParams.get('code');
+  const returnedState = url.searchParams.get('state');
+
+  if (returnedState !== state) throw new Error('State mismatch');
+  if (!code) throw new Error('No authorization code received');
+
+  const tokenRes = await fetch('https://www.reddit.com/api/v1/access_token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': `Basic ${btoa(clientId + ':')}`,
+    },
+    body: `grant_type=authorization_code&code=${code}&redirect_uri=${encodeURIComponent(redirectUri)}`,
+  });
+
+  if (!tokenRes.ok) throw new Error(`Token exchange failed: ${tokenRes.status}`);
+  const tokenData = await tokenRes.json();
+  if (tokenData.error) throw new Error(tokenData.error);
+
+  await chrome.storage.local.set({
+    redditToken: tokenData.access_token,
+    redditRefresh: tokenData.refresh_token,
+    redditTokenExpiry: Date.now() + tokenData.expires_in * 1000,
+    redditClientId: clientId,
+  });
+
+  return { success: true };
+}
+
+async function redditLogout() {
+  await chrome.storage.local.remove([
+    'redditToken', 'redditRefresh', 'redditTokenExpiry', 'redditClientId',
+  ]);
+}
+
 // ----- Rate-Limited Request Queue -----
 
 const queue = [];
@@ -36,26 +135,38 @@ async function drainQueue() {
   queueRunning = true;
 
   const { url, resolve, reject } = queue.shift();
+  let authenticated = false;
   try {
-    const res = await fetch(url);
-    console.log(`[RedBot] Fetching: ${url}`);
+    const token = await getRedditToken();
+    let fetchUrl = url;
+    const headers = {};
+
+    if (token) {
+      authenticated = true;
+      fetchUrl = url.replace('https://www.reddit.com/', 'https://oauth.reddit.com/');
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const res = await fetch(fetchUrl, { headers });
+    console.log(`[RedBot] Fetching: ${fetchUrl}${authenticated ? ' (auth)' : ''}`);
     if (res.status === 429) throw new Error('ratelimited');
     if (res.status === 404) throw new Error('not_found');
     if (res.status === 403) throw new Error('suspended');
     if (res.status === 451) throw new Error('banned');
     if (!res.ok) throw new Error(`http_${res.status}`);
     const data = await res.json();
-    console.log(`[RedBot] Fetched OK: ${url}`);
+    console.log(`[RedBot] Fetched OK: ${fetchUrl}`);
     resolve(data);
   } catch (err) {
     console.warn(`[RedBot] Fetch failed: ${url} — ${err.message}`);
     reject(err);
   }
 
+  // Authenticated: 60 req/min → 600ms; unauthenticated: ~10 req/min → 1100ms
   setTimeout(() => {
     queueRunning = false;
     drainQueue();
-  }, 1100);
+  }, authenticated ? 600 : 1100);
 }
 
 // ----- Reddit API helpers -----
@@ -506,6 +617,34 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     cache.clear();
     tabResults.clear();
     sendResponse({ ok: true });
+    return true;
+  }
+
+  if (msg.type === 'redditLogin') {
+    redditLogin(msg.clientId)
+      .then(r => sendResponse(r))
+      .catch(e => sendResponse({ error: e.message }));
+    return true;
+  }
+
+  if (msg.type === 'redditLogout') {
+    redditLogout().then(() => sendResponse({ ok: true }));
+    return true;
+  }
+
+  if (msg.type === 'getRedditAuth') {
+    chrome.storage.local.get(
+      ['redditToken', 'redditTokenExpiry', 'redditClientId'],
+      data => {
+        const loggedIn = !!(data.redditToken && data.redditTokenExpiry > Date.now());
+        sendResponse({ loggedIn, clientId: data.redditClientId || '' });
+      },
+    );
+    return true;
+  }
+
+  if (msg.type === 'getRedirectUrl') {
+    sendResponse({ url: chrome.identity.getRedirectURL() });
     return true;
   }
 });

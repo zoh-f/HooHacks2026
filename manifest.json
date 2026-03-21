@@ -3,9 +3,10 @@
   "description": "Detect Reddit bots with tiered heuristic and AI analysis",
   "version": "1.0",
   "manifest_version": 3,
-  "permissions": ["activeTab", "storage"],
+  "permissions": ["activeTab", "storage", "identity"],
   "host_permissions": [
     "*://*.reddit.com/*",
+    "https://oauth.reddit.com/*",
     "https://generativelanguage.googleapis.com/*"
   ],
   "background": {

@@ -1,10 +1,15 @@
 document.addEventListener('DOMContentLoaded', () => {
   loadResults();
   loadApiKey();
+  loadRedditAuth();
+  loadBotSettings();
 
   document.getElementById('btnScan').addEventListener('click', triggerScan);
   document.getElementById('btnSave').addEventListener('click', saveApiKey);
   document.getElementById('btnClear').addEventListener('click', clearCache);
+  document.getElementById('btnLogin').addEventListener('click', handleRedditLogin);
+  document.getElementById('botAction').addEventListener('change', saveBotSettings);
+  document.getElementById('botThreshold').addEventListener('change', saveBotSettings);
 });
 
 // ---- Load and display scan results for the active tab ----
@@ -96,7 +101,7 @@ function triggerScan() {
     chrome.tabs.sendMessage(tabs[0].id, { type: 'triggerScan' });
 
     const btn = document.getElementById('btnScan');
-    btn.textContent = 'Scanning…';
+    btn.textContent = 'Scanning\u2026';
     btn.disabled = true;
 
     setTimeout(() => {
@@ -122,6 +127,80 @@ function saveApiKey() {
   chrome.storage.sync.set({ geminiApiKey: key }, () => {
     flash('btnSave', 'Saved!', 'Save');
   });
+}
+
+// ---- Reddit OAuth ----
+
+function loadRedditAuth() {
+  chrome.runtime.sendMessage({ type: 'getRedirectUrl' }, res => {
+    if (res?.url) {
+      document.getElementById('redirectUri').textContent = res.url;
+    }
+  });
+
+  chrome.runtime.sendMessage({ type: 'getRedditAuth' }, res => {
+    if (chrome.runtime.lastError) return;
+    const btn = document.getElementById('btnLogin');
+    const status = document.getElementById('authStatus');
+    const clientInput = document.getElementById('clientId');
+
+    if (res?.loggedIn) {
+      btn.textContent = 'Logout';
+      btn.className = 'btn btn-ghost';
+      status.textContent = '\u2713 Logged in \u2014 using authenticated requests (higher rate limit)';
+      status.style.color = '#22c55e';
+      if (res.clientId) clientInput.value = res.clientId;
+    } else {
+      btn.textContent = 'Login';
+      btn.className = 'btn btn-primary';
+      status.textContent = 'Not logged in \u2014 limited API requests';
+      status.style.color = '';
+      if (res?.clientId) clientInput.value = res.clientId;
+    }
+  });
+}
+
+function handleRedditLogin() {
+  const btn = document.getElementById('btnLogin');
+
+  if (btn.textContent === 'Logout') {
+    chrome.runtime.sendMessage({ type: 'redditLogout' }, () => loadRedditAuth());
+    return;
+  }
+
+  const clientId = document.getElementById('clientId').value.trim();
+  if (!clientId) {
+    flash('btnLogin', 'Need Client ID', 'Login');
+    return;
+  }
+
+  btn.textContent = 'Connecting\u2026';
+  btn.disabled = true;
+
+  chrome.runtime.sendMessage({ type: 'redditLogin', clientId }, res => {
+    btn.disabled = false;
+    if (res?.error) {
+      btn.textContent = 'Failed';
+      setTimeout(() => { btn.textContent = 'Login'; }, 2000);
+    } else {
+      loadRedditAuth();
+    }
+  });
+}
+
+// ---- Bot action settings ----
+
+function loadBotSettings() {
+  chrome.storage.sync.get(['botAction', 'botThreshold'], res => {
+    if (res.botAction) document.getElementById('botAction').value = res.botAction;
+    if (res.botThreshold != null) document.getElementById('botThreshold').value = res.botThreshold;
+  });
+}
+
+function saveBotSettings() {
+  const action = document.getElementById('botAction').value;
+  const threshold = parseInt(document.getElementById('botThreshold').value) || 40;
+  chrome.storage.sync.set({ botAction: action, botThreshold: threshold });
 }
 
 // ---- Clear cache ----

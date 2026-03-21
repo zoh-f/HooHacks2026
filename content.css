@@ -470,3 +470,57 @@
 .redbot-pp-retry-btn:hover {
   background: rgba(59, 130, 246, 0.25);
 }
+
+/* ---- Comment action styles (minimize / hide) ---- */
+
+.redbot-comment-minimized {
+  max-height: 48px !important;
+  overflow: hidden !important;
+  opacity: 0.3;
+  transition: max-height 0.3s, opacity 0.3s;
+}
+
+.redbot-minimize-notice,
+.redbot-hidden-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  margin: 4px 0;
+}
+
+.redbot-minimize-notice {
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  color: #f59e0b;
+}
+
+.redbot-hidden-placeholder {
+  background: rgba(100, 116, 139, 0.08);
+  border: 1px solid rgba(100, 116, 139, 0.15);
+  color: #64748b;
+}
+
+.redbot-expand-btn,
+.redbot-reveal-btn {
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  padding: 2px 10px;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  flex-shrink: 0;
+  margin-left: 8px;
+  transition: background 0.15s;
+}
+
+.redbot-expand-btn:hover,
+.redbot-reveal-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}

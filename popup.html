@@ -46,6 +46,21 @@
 
   <section class="section">
     <h2>Settings</h2>
+
+    <label>Reddit Login</label>
+    <div class="row">
+      <input type="text" id="clientId" placeholder="Reddit Client ID">
+      <button id="btnLogin" class="btn btn-primary">Login</button>
+    </div>
+    <p class="hint" id="authStatus">Not logged in — limited API requests</p>
+    <p class="hint">
+      Redirect URI: <code id="redirectUri"></code>
+    </p>
+    <p class="hint">
+      <a href="https://www.reddit.com/prefs/apps" target="_blank">Create a Reddit app</a>
+      (type: installed app, use the redirect URI above)
+    </p>
+
     <label for="apiKey">Gemini API Key</label>
     <div class="row">
       <input type="password" id="apiKey" placeholder="Paste key for Tier 3 analysis">
@@ -55,6 +70,20 @@
       Required for deep LLM analysis.
       <a href="https://aistudio.google.com/apikey" target="_blank">Get a free key</a>
     </p>
+
+    <label for="botAction">Bot Comment Action</label>
+    <select id="botAction" class="select">
+      <option value="badge">Show Badge</option>
+      <option value="minimize">Auto-Minimize</option>
+      <option value="hide">Hide Comment</option>
+      <option value="off">Extension Off</option>
+    </select>
+
+    <label for="botThreshold">Action Threshold</label>
+    <div class="row row-compact">
+      <input type="number" id="botThreshold" min="0" max="100" value="40" class="input-num">
+      <span class="hint-inline">% — comments at or above this are minimized / hidden</span>
+    </div>
 
     <button id="btnClear" class="btn btn-ghost full">Clear Cache</button>
   </section>

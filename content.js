@@ -10,6 +10,29 @@
   const ATTR = 'data-redbot';
   const PROCESSED = new Set();
 
+  // ---- Settings (synced from popup) ----
+
+  let botAction = 'badge';
+  let botThreshold = 40;
+  let settingsReady = false;
+
+  function loadSettings() {
+    return new Promise(resolve => {
+      chrome.storage.sync.get(['botAction', 'botThreshold'], res => {
+        botAction = res.botAction || 'badge';
+        botThreshold = res.botThreshold ?? 40;
+        settingsReady = true;
+        resolve();
+      });
+    });
+  }
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'sync') return;
+    if (changes.botAction) botAction = changes.botAction.newValue || 'badge';
+    if (changes.botThreshold) botThreshold = changes.botThreshold.newValue ?? 40;
+  });
+
   // ---- Reddit version detection ----
 
   function isOldReddit() {
@@ -212,6 +235,49 @@
     return card;
   }
 
+  // ---- Comment actions (minimize / hide) ----
+
+  function applyCommentAction(el, result) {
+    if (botAction === 'badge' || botAction === 'off') return;
+    if (result.score < 0 || result.score < botThreshold) return;
+
+    const comment =
+      el.closest('shreddit-comment') ||
+      el.closest('.comment') ||
+      el.closest('.Comment') ||
+      el.closest('[data-testid="comment"]');
+    if (!comment || comment.hasAttribute('data-redbot-action')) return;
+    comment.setAttribute('data-redbot-action', botAction);
+
+    if (botAction === 'hide') {
+      const placeholder = document.createElement('div');
+      placeholder.className = 'redbot-hidden-placeholder';
+      placeholder.innerHTML =
+        `<span>Comment hidden by RedBot (${result.score}% bot likelihood)</span>` +
+        `<button class="redbot-reveal-btn">Show</button>`;
+      placeholder.querySelector('.redbot-reveal-btn').addEventListener('click', () => {
+        comment.style.display = '';
+        placeholder.remove();
+        comment.removeAttribute('data-redbot-action');
+      });
+      comment.before(placeholder);
+      comment.style.display = 'none';
+    } else if (botAction === 'minimize') {
+      const notice = document.createElement('div');
+      notice.className = 'redbot-minimize-notice';
+      notice.innerHTML =
+        `<span>Minimized by RedBot (${result.score}% bot likelihood)</span>` +
+        `<button class="redbot-expand-btn">Expand</button>`;
+      notice.querySelector('.redbot-expand-btn').addEventListener('click', () => {
+        comment.classList.remove('redbot-comment-minimized');
+        notice.remove();
+        comment.removeAttribute('data-redbot-action');
+      });
+      comment.before(notice);
+      comment.classList.add('redbot-comment-minimized');
+    }
+  }
+
   // ---- Scan queue ----
 
   const scanQueue = [];
@@ -248,6 +314,8 @@
         document.querySelectorAll('.redbot-card').forEach(c => c.remove());
         badge.after(makeCard(result));
       });
+
+      applyCommentAction(el, result);
     } catch (err) {
       console.error(`[RedBot] Error scanning u/${username}:`, err);
       dot.remove();
@@ -263,6 +331,7 @@
   // ---- Page scanning ----
 
   function scanPage() {
+    if (botAction === 'off') return;
     const els = getUsernameElements();
     const newUsers = els.filter(e => !PROCESSED.has(e.username));
     console.log(`[RedBot] Page scan: found ${els.length} usernames, ${newUsers.length} new`);
@@ -315,6 +384,7 @@
   }
 
   async function injectProfilePanel() {
+    if (botAction === 'off') return;
     const username = getProfileUsername();
     if (!username || document.getElementById('redbot-profile-panel')) return;
 
@@ -493,6 +563,7 @@
       const oldPanel = document.getElementById('redbot-profile-panel');
       if (oldPanel) oldPanel.remove();
       setTimeout(() => {
+        if (botAction === 'off') return;
         scanPage();
         if (isProfilePage()) injectProfilePanel();
       }, 1500);
@@ -510,9 +581,12 @@
 
   observer.observe(document.body, { childList: true, subtree: true });
 
-  // ---- Initial scan ----
-  scanPage();
-  if (isProfilePage()) {
-    setTimeout(injectProfilePanel, 500);
-  }
+  // ---- Initial scan (deferred until settings load) ----
+  loadSettings().then(() => {
+    if (botAction === 'off') return;
+    scanPage();
+    if (isProfilePage()) {
+      setTimeout(injectProfilePanel, 500);
+    }
+  });
 })();
