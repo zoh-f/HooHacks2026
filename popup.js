@@ -9,7 +9,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ---- Load and display scan results for the active tab ----
 
-function loadResults() {
+setInterval(loadResults, 500);
+
+async function loadResults() {
   chrome.runtime.sendMessage({ type: 'getTabResults' }, results => {
     if (chrome.runtime.lastError) return;
 
