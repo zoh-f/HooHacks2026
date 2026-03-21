@@ -79,19 +79,34 @@
 
   // ---- Badge creation ----
 
-  function makeBadge(score, tier) {
+  function makeBadge(score, tier, result) {
     const b = document.createElement('span');
     b.className = 'redbot-badge';
 
-    if (score < 0) {
+    if (score < 0 && result?.errorType) {
+      b.classList.add('redbot-err');
+      if (result.errorType === 'suspended') {
+        b.textContent = '\u{1F6A8}';
+        b.title = 'Account suspended';
+      } else if (result.errorType === 'banned') {
+        b.textContent = '\u{1F528}';
+        b.title = 'Account banned';
+      } else if (result.errorType === 'deleted') {
+        b.textContent = '\u{1F6AB}';
+        b.title = 'Account deleted';
+      } else {
+        b.textContent = '?';
+        b.title = 'Scan error';
+      }
+    } else if (score < 0) {
       b.classList.add('redbot-err');
       b.textContent = '?';
       b.title = 'Scan error';
-    } else if (score < 30) {
+    } else if (score < 10) {
       b.classList.add('redbot-green');
       b.textContent = score + '%';
       b.title = `Likely human (${score}%) — Tier ${tier}`;
-    } else if (score < 60) {
+    } else if (score < 40) {
       b.classList.add('redbot-yellow');
       b.textContent = score + '%';
       b.title = `Suspicious (${score}%) — Tier ${tier}`;
@@ -109,8 +124,11 @@
   function makeCard(result) {
     const r = result;
     let cls, label;
-    if (r.score >= 60) { cls = 'bot'; label = 'Likely Bot'; }
-    else if (r.score >= 30) { cls = 'suspicious'; label = 'Suspicious'; }
+    if (r.score < 0 && r.errorType === 'suspended') { cls = 'bot'; label = 'Suspended'; }
+    else if (r.score < 0 && r.errorType === 'banned') { cls = 'bot'; label = 'Banned'; }
+    else if (r.score < 0 && r.errorType === 'deleted') { cls = 'bot'; label = 'Deleted'; }
+    else if (r.score >= 40) { cls = 'bot'; label = 'Likely Bot'; }
+    else if (r.score >= 10) { cls = 'suspicious'; label = 'Suspicious'; }
     else { cls = 'human'; label = 'Likely Human'; }
 
     const card = document.createElement('div');
@@ -171,8 +189,8 @@
     busy = true;
 
     const { el, username } = scanQueue.shift();
+    console.log(`[RedBot] Scanning u/${username}...`);
 
-    // Spinner while scanning
     const dot = document.createElement('span');
     dot.className = 'redbot-badge redbot-spin';
     dot.textContent = '···';
@@ -185,8 +203,9 @@
         username,
       });
 
+      console.log(`[RedBot] u/${username} → score=${result.score} tier=${result.tier}`, result.errorType || '');
       dot.remove();
-      const badge = makeBadge(result.score, result.tier);
+      const badge = makeBadge(result.score, result.tier, result);
       el.after(badge);
       el.setAttribute(ATTR, 'done');
 
@@ -197,8 +216,9 @@
         badge.after(makeCard(result));
       });
     } catch (err) {
+      console.error(`[RedBot] Error scanning u/${username}:`, err);
       dot.remove();
-      const badge = makeBadge(-1, 0);
+      const badge = makeBadge(-1, 0, null);
       el.after(badge);
       el.setAttribute(ATTR, 'error');
     }
@@ -211,6 +231,8 @@
 
   function scanPage() {
     const els = getUsernameElements();
+    const newUsers = els.filter(e => !PROCESSED.has(e.username));
+    console.log(`[RedBot] Page scan: found ${els.length} usernames, ${newUsers.length} new`);
     for (const { el, username } of els) {
       if (PROCESSED.has(username)) {
         el.setAttribute(ATTR, 'dup');

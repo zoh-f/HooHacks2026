@@ -38,11 +38,16 @@ async function drainQueue() {
   const { url, resolve, reject } = queue.shift();
   try {
     const res = await fetch(url);
+    console.log(`[RedBot] Fetching: ${url}`);
     if (res.status === 404) throw new Error('not_found');
     if (res.status === 403) throw new Error('suspended');
+    if (res.status === 451) throw new Error('banned');
     if (!res.ok) throw new Error(`http_${res.status}`);
-    resolve(await res.json());
+    const data = await res.json();
+    console.log(`[RedBot] Fetched OK: ${url}`);
+    resolve(data);
   } catch (err) {
+    console.warn(`[RedBot] Fetch failed: ${url} — ${err.message}`);
     reject(err);
   }
 
@@ -58,7 +63,7 @@ function fetchUserAbout(username) {
   return enqueueFetch(`https://www.reddit.com/user/${username}/about.json`);
 }
 
-function fetchUserComments(username, limit = 10) {
+function fetchUserComments(username, limit = 50) {
   return enqueueFetch(
     `https://www.reddit.com/user/${username}/comments.json?limit=${limit}&sort=new`
   );
@@ -74,6 +79,7 @@ const SKIP_USERS = new Set([
 
 function runTier1(aboutData) {
   const d = aboutData.data;
+  console.log(`[RedBot] Tier 1 — analyzing u/${d.name}`);
   let score = 0;
   const signals = [];
 
@@ -153,8 +159,11 @@ function runTier1(aboutData) {
     }
   }
 
+  const finalT1 = Math.min(score, 100);
+  console.log(`[RedBot] Tier 1 — u/${d.name} score: ${finalT1}`, signals);
+
   return {
-    score: Math.min(score, 100),
+    score: finalT1,
     signals,
     tier: 1,
     meta: {
@@ -194,6 +203,8 @@ function runTier2(commentsPayload, tier1) {
   const comments = commentsPayload.data.children
     .filter(c => c.kind === 't1')
     .map(c => c.data);
+
+  console.log(`[RedBot] Tier 2 — u/${tier1.meta.username}, ${comments.length} comments sampled`);
 
   if (comments.length === 0) return { ...tier1, tier: 2 };
 
@@ -272,6 +283,7 @@ function runTier2(commentsPayload, tier1) {
   }
 
   const blended = Math.min(100, Math.round(tier1.score * 0.4 + t2 * 0.6));
+  console.log(`[RedBot] Tier 2 — u/${tier1.meta.username} T1=${tier1.score} T2raw=${t2} blended=${blended}`);
 
   return {
     score: blended,
@@ -292,8 +304,10 @@ async function getApiKey() {
 }
 
 async function runTier3(aboutPayload, commentsPayload, prior) {
+  console.log(`[RedBot] Tier 3 — u/${prior.meta.username}, calling Gemini`);
   const apiKey = await getApiKey();
   if (!apiKey) {
+    console.warn('[RedBot] Tier 3 — skipped, no API key set');
     return { ...prior, tier: 3, llmSkipped: true, llmReason: 'No API key set' };
   }
 
@@ -345,6 +359,7 @@ Respond with ONLY valid JSON, no markdown fences:
 
     const llmScore = parsed.score;
     const finalScore = Math.min(100, Math.round(prior.score * 0.3 + llmScore * 0.7));
+    console.log(`[RedBot] Tier 3 — u/${prior.meta.username} LLM=${llmScore} final=${finalScore}`, parsed.reasoning);
 
     return {
       score: finalScore,
@@ -376,31 +391,55 @@ async function analyzeUser(username) {
   }
 
   const cached = getCached(username);
-  if (cached) return cached;
+  if (cached) {
+    console.log(`[RedBot] Cache hit for u/${username}`);
+    return cached;
+  }
+
+  console.log(`[RedBot] Starting analysis for u/${username}`);
 
   try {
     const aboutData = await fetchUserAbout(username);
     const tier1 = runTier1(aboutData);
 
-    if (tier1.score < 30) {
+    if (tier1.score < 10) {
+      console.log(`[RedBot] u/${username} — Tier 1 passed (${tier1.score}%), stopping`);
       setCache(username, tier1);
       return tier1;
     }
 
+    console.log(`[RedBot] u/${username} — Tier 1 flagged (${tier1.score}%), advancing to Tier 2`);
     const commentsData = await fetchUserComments(username);
     const tier2 = runTier2(commentsData, tier1);
 
-    if (tier2.score < 60) {
+    if (tier2.score < 40) {
+      console.log(`[RedBot] u/${username} — Tier 2 passed (${tier2.score}%), stopping`);
       setCache(username, tier2);
       return tier2;
     }
 
+    console.log(`[RedBot] u/${username} — Tier 2 flagged (${tier2.score}%), advancing to Tier 3`);
     const tier3 = await runTier3(aboutData, commentsData, tier2);
     setCache(username, tier3);
     return tier3;
   } catch (err) {
-    console.error(`Analysis failed for ${username}:`, err);
-    return { score: -1, signals: [], tier: 0, error: err.message, meta: { username } };
+    console.error(`[RedBot] Analysis failed for u/${username}:`, err.message);
+
+    let errorType = 'error';
+    if (err.message === 'suspended') errorType = 'suspended';
+    else if (err.message === 'banned') errorType = 'banned';
+    else if (err.message === 'not_found') errorType = 'deleted';
+
+    const result = {
+      score: -1,
+      signals: [],
+      tier: 0,
+      error: err.message,
+      errorType,
+      meta: { username },
+    };
+    setCache(username, result);
+    return result;
   }
 }
 
@@ -410,6 +449,7 @@ const tabResults = new Map();
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'analyzeUser') {
+    console.log(`[RedBot] Message: analyzeUser — u/${msg.username}`);
     const tabId = sender.tab?.id;
     analyzeUser(msg.username).then(result => {
       if (tabId) {

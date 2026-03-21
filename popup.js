@@ -28,13 +28,28 @@ function loadResults() {
     list.innerHTML = '';
 
     for (const [username, r] of entries) {
-      if (r.score < 0) continue;
+      let cat, display;
 
-      let cat;
-      if (r.knownBot)       { cat = 'known'; bots++; }
-      else if (r.score >= 60) { cat = 'bot'; bots++; }
-      else if (r.score >= 30) { cat = 'suspicious'; sus++; }
-      else                    { cat = 'human'; humans++; }
+      if (r.score < 0 && r.errorType) {
+        cat = 'known';
+        bots++;
+        const labels = { suspended: '\u{1F6A8} Suspended', banned: '\u{1F528} Banned', deleted: '\u{1F6AB} Deleted' };
+        display = labels[r.errorType] || '? Error';
+      } else if (r.score < 0) {
+        continue;
+      } else if (r.knownBot) {
+        cat = 'known'; bots++;
+        display = `${r.score}%`;
+      } else if (r.score >= 40) {
+        cat = 'bot'; bots++;
+        display = `${r.score}%`;
+      } else if (r.score >= 10) {
+        cat = 'suspicious'; sus++;
+        display = `${r.score}%`;
+      } else {
+        cat = 'human'; humans++;
+        display = `${r.score}%`;
+      }
 
       const row = document.createElement('div');
       row.className = 'uitem';
@@ -44,7 +59,7 @@ function loadResults() {
           <span class="uname">u/${username}</span>
         </div>
         <div>
-          <span class="uscore ${cat}">${r.score}%</span>
+          <span class="uscore ${cat}">${display}</span>
           <span class="utier">T${r.tier}</span>
         </div>`;
       list.appendChild(row);
