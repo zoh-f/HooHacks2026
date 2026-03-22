@@ -14,9 +14,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ---- Load and display scan results for the active tab ----
 
+let lastTabId = null;
 setInterval(loadResults, 500);
 
+function resetAllCounters() {
+  resetRollingCounter(document.getElementById('statTotal'));
+  resetRollingCounter(document.getElementById('statBots'));
+  resetRollingCounter(document.getElementById('statSus'));
+  resetRollingCounter(document.getElementById('statHuman'));
+}
+
 async function loadResults() {
+  
   chrome.runtime.sendMessage({ type: 'getTabResults' }, results => {
     if (chrome.runtime.lastError) return;
 
@@ -25,6 +34,12 @@ async function loadResults() {
 
     if (entries.length === 0) {
       list.innerHTML = '<p class="empty">Open a Reddit thread to start scanning.</p>';
+      
+      resetRollingCounter(document.getElementById('statTotal'));
+      resetRollingCounter(document.getElementById('statBots'));
+      resetRollingCounter(document.getElementById('statSus'));
+      resetRollingCounter(document.getElementById('statHuman'));
+      
       setSummary(0, 0, 0, 0);
       return;
     }
@@ -163,6 +178,12 @@ function buildDigits(container, value) {
 function setDigit(numbersEl, num) {
   numbersEl.style.transform =
     `translateY(-${num * DIGIT_HEIGHT}px)`;
+}
+
+function resetRollingCounter(el) {
+  el.classList.remove("rolling");
+  delete el.dataset.rollingInit;
+  el.innerHTML = "0";
 }
 
 function updateRollingCounter(el, newValue) {
