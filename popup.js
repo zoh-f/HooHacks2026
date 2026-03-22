@@ -162,7 +162,8 @@ function renderResults(results, pending, threadOpen) {
       };
       display = labels[r.errorType] || '? Error';
     } else if (r.score < 0) {
-      continue;
+      cat = 'unknown';
+      display = '? Unknown';
     } else if (r.knownBot || r.score >= 40) {
       cat = 'bot'; bots++;
       display = `${r.score}%`;

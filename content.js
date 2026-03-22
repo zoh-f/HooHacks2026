@@ -1,5 +1,5 @@
 // ============================================================
-// RedBot — Content Script
+// AstroGuard — Content Script
 // Injected into Reddit pages. Finds comment authors, requests
 // analysis from the background worker, and injects score badges.
 // ============================================================
@@ -171,7 +171,7 @@
     } else if (score < 0) {
       b.classList.add('redbot-err');
       b.textContent = '?';
-      b.title = 'Scan error';
+      b.title = 'Not scanned';
     } else if (score < 20) {
       b.classList.add('redbot-green');
       b.textContent = score + '%';
@@ -213,6 +213,7 @@
       if (r.score < 0 && r.errorType === 'suspended') { cls = 'bot'; label = 'Suspended'; }
       else if (r.score < 0 && r.errorType === 'banned') { cls = 'bot'; label = 'Banned'; }
       else if (r.score < 0 && r.errorType === 'deleted') { cls = 'bot'; label = 'Deleted'; }
+      else if (r.score < 0) { cls = 'unknown'; label = 'Not Scanned'; }
       else if (r.score >= 40) { cls = 'bot'; label = 'Likely Bot'; }
       else if (r.score >= 20) { cls = 'suspicious'; label = 'Suspicious'; }
       else { cls = 'human'; label = 'Likely Human'; }
@@ -351,7 +352,7 @@
     busy = true;
 
     const username = scanQueue.shift();
-    console.log(`[RedBot] Scanning u/${username}...`);
+    console.log(`[AstroGuard] Scanning u/${username}...`);
 
     try {
       const result = await chrome.runtime.sendMessage({
@@ -372,10 +373,10 @@
 
       rlDelay = 0;
       commentTsMap.delete(username);
-      console.log(`[RedBot] u/${username} → score=${result.score} tier=${result.tier}`, result.errorType || '');
+      console.log(`[AstroGuard] u/${username} → score=${result.score} tier=${result.tier}`, result.errorType || '');
       flushPending(username, result);
     } catch (err) {
-      console.error(`[RedBot] Error scanning u/${username}:`, err);
+      console.error(`[AstroGuard] Error scanning u/${username}:`, err);
       commentTsMap.delete(username);
       const errResult = { score: -1, tier: 0, signals: [], error: err.message };
       flushPending(username, errResult);
@@ -432,7 +433,7 @@
   function scanPage() {
     if (botAction === 'off') return;
     const els = getUsernameElements();
-    console.log(`[RedBot] Page scan: found ${els.length} username elements`);
+    console.log(`[AstroGuard] Page scan: found ${els.length} username elements`);
 
     const newUsernames = new Set();
     const processedContainers = new Set();
@@ -529,15 +530,15 @@
     const username = getProfileUsername();
     if (!username || document.getElementById('redbot-profile-panel')) return;
 
-    console.log(`[RedBot] Profile page detected: u/${username}`);
+    console.log(`[AstroGuard] Profile page detected: u/${username}`);
 
     const panel = document.createElement('div');
     panel.id = 'redbot-profile-panel';
     panel.innerHTML = `
       <div class="redbot-pp-hdr" id="redbot-pp-drag-handle">
-        <img src="${chrome.runtime.getURL('rbot.webp')}" class="redbot-pp-logo" alt="RedBot">
+        <img src="${chrome.runtime.getURL('logo.png')}" class="redbot-pp-logo" alt="AstroGuard">
         <div>
-          <div class="redbot-pp-title">RedBot Analysis</div>
+          <div class="redbot-pp-title">AstroGuard Analysis</div>
           <div class="redbot-pp-user">u/${username}</div>
         </div>
         <button class="redbot-pp-close" id="redbot-pp-close" title="Close">\u2715</button>
@@ -560,7 +561,7 @@
 
       renderProfileResult(panel, username, result);
     } catch (err) {
-      console.error(`[RedBot] Profile analysis error:`, err);
+      console.error(`[AstroGuard] Profile analysis error:`, err);
       panel.querySelector('.redbot-pp-body').innerHTML =
         '<div class="redbot-pp-err">Could not analyze this user.</div>';
     }
@@ -600,6 +601,7 @@
     if (r.score < 0 && r.errorType === 'suspended') { cls = 'bot'; label = 'Suspended'; }
     else if (r.score < 0 && r.errorType === 'banned') { cls = 'bot'; label = 'Banned'; }
     else if (r.score < 0 && r.errorType === 'deleted') { cls = 'bot'; label = 'Deleted'; }
+    else if (r.score < 0) { cls = 'unknown'; label = 'Not Scanned'; }
     else if (r.score >= 40) { cls = 'bot'; label = 'Likely Bot'; }
     else if (r.score >= 20) { cls = 'suspicious'; label = 'Suspicious'; }
     else { cls = 'human'; label = 'Likely Human'; }
@@ -673,7 +675,7 @@
       deepBtn.addEventListener('click', async () => {
         deepBtn.textContent = 'Analyzing…';
         deepBtn.disabled = true;
-        console.log(`[RedBot] Deep analysis triggered for u/${username}`);
+        console.log(`[AstroGuard] Deep analysis triggered for u/${username}`);
 
         try {
           const deepResult = await chrome.runtime.sendMessage({
@@ -683,7 +685,7 @@
           });
           renderProfileResult(panel, username, deepResult);
         } catch (err) {
-          console.error(`[RedBot] Deep analysis error:`, err);
+          console.error(`[AstroGuard] Deep analysis error:`, err);
           deepBtn.textContent = 'Error — try again';
           deepBtn.disabled = false;
         }

@@ -1,6 +1,6 @@
 {
-  "name": "RedBot",
-  "description": "Detect Reddit bots with tiered heuristic and AI analysis",
+  "name": "AstroGuard",
+  "description": "Detect Reddit bots and astroturfing with tiered heuristic and AI analysis",
   "version": "1.0",
   "manifest_version": 3,
   "permissions": ["activeTab", "storage", "identity"],
@@ -22,14 +22,14 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_icon": "rbot.webp"
+    "default_icon": "icon128.png"
   },
   "icons": {
-    "128": "rbot.webp"
+    "128": "icon128.png"
   },
   "web_accessible_resources": [
     {
-      "resources": ["rbot.webp", "insights.html", "insights.css", "insights.js"],
+      "resources": ["logo.png", "insights.html", "insights.css", "insights.js"],
       "matches": ["*://*.reddit.com/*"]
     }
   ]

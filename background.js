@@ -1,5 +1,5 @@
 // ============================================================
-// RedBot — Background Service Worker
+// AstroGuard — Background Service Worker
 // Handles Reddit API fetching, tiered detection, and caching.
 // ============================================================
 
@@ -32,7 +32,7 @@ async function getRedditToken() {
       try {
         return await refreshRedditToken(data.redditRefresh, data.redditClientId);
       } catch (e) {
-        console.warn('[RedBot] Token refresh failed:', e);
+        console.warn('[AstroGuard] Token refresh failed:', e);
         return null;
       }
     }
@@ -153,15 +153,15 @@ async function drainQueue() {
       }
 
       if (attempt > 0) {
-        console.log(`[RedBot] Retry #${attempt} for: ${url} (waited ${backoff / 1000}s)`);
+        console.log(`[AstroGuard] Retry #${attempt} for: ${url} (waited ${backoff / 1000}s)`);
       }
 
       const res = await fetch(fetchUrl, { headers });
-      console.log(`[RedBot] Fetching: ${fetchUrl}${authenticated ? ' (auth)' : ''}`);
+      console.log(`[AstroGuard] Fetching: ${fetchUrl}${authenticated ? ' (auth)' : ''}`);
 
       if (res.status === 429) {
         if (attempt < MAX_RETRIES) {
-          console.warn(`[RedBot] Rate limited on ${url} — backing off ${backoff / 1000}s (attempt ${attempt + 1}/${MAX_RETRIES})`);
+          console.warn(`[AstroGuard] Rate limited on ${url} — backing off ${backoff / 1000}s (attempt ${attempt + 1}/${MAX_RETRIES})`);
           await new Promise(r => setTimeout(r, backoff));
           backoff = Math.min(backoff * 2, MAX_BACKOFF);
           continue;
@@ -175,15 +175,15 @@ async function drainQueue() {
       if (!res.ok) throw new Error(`http_${res.status}`);
 
       const data = await res.json();
-      console.log(`[RedBot] Fetched OK: ${fetchUrl}`);
+      console.log(`[AstroGuard] Fetched OK: ${fetchUrl}`);
       resolve(data);
       break;
     } catch (err) {
       if (err.message !== 'ratelimited' && attempt < MAX_RETRIES) {
-        console.warn(`[RedBot] Fetch error on ${url}: ${err.message} — not retryable, failing`);
+        console.warn(`[AstroGuard] Fetch error on ${url}: ${err.message} — not retryable, failing`);
       }
       if (attempt === MAX_RETRIES || err.message !== 'ratelimited') {
-        console.warn(`[RedBot] Fetch failed: ${url} — ${err.message}`);
+        console.warn(`[AstroGuard] Fetch failed: ${url} — ${err.message}`);
         reject(err);
         break;
       }
@@ -273,7 +273,7 @@ function trustMultiplier(ageDays, totalKarma) {
 
 function runHeuristics(aboutData, commentsPayload) {
   const d = aboutData.data;
-  console.log(`[RedBot] Heuristics — analyzing u/${d.name}`);
+  console.log(`[AstroGuard] Heuristics — analyzing u/${d.name}`);
   let raw = 0;
   const signals = [];
 
@@ -375,7 +375,7 @@ function runHeuristics(aboutData, commentsPayload) {
     .filter(c => c.kind === 't1')
     .map(c => c.data);
 
-  console.log(`[RedBot] Heuristics — u/${d.name}, ${comments.length} comments sampled`);
+  console.log(`[AstroGuard] Heuristics — u/${d.name}, ${comments.length} comments sampled`);
 
   const flaggedComments = [];
 
@@ -633,12 +633,17 @@ function runHeuristics(aboutData, commentsPayload) {
     }
   }
 
-  // ---- Apply trust multiplier ----
+  // ---- Apply trust multiplier (skip if strong bot evidence) ----
 
-  const trust = trustMultiplier(ageDays, totalKarma);
+  const highConfBotSignals = [
+    '"Bot" in username', 'Self-identifies as bot', 'Bot footer detected',
+    'Duplicate comments', 'Scam link domains',
+  ];
+  const hasStrongBotEvidence = signals.some(s => highConfBotSignals.includes(s.name));
+  const trust = hasStrongBotEvidence ? 1.0 : trustMultiplier(ageDays, totalKarma);
   const finalScore = Math.min(100, Math.round(raw * trust));
 
-  console.log(`[RedBot] Heuristics — u/${d.name} raw=${raw} trust=${trust} final=${finalScore}`, signals);
+  console.log(`[AstroGuard] Heuristics — u/${d.name} raw=${raw} trust=${trust} final=${finalScore}`, signals);
 
   // Pick top 5 most suspicious sample comments
   const uniqueFlagged = [];
@@ -715,10 +720,10 @@ function safeParseGeminiJSON(raw) {
 }
 
 async function runLLM(aboutPayload, commentsPayload, prior) {
-  console.log(`[RedBot] LLM — u/${prior.meta.username}, calling Gemini`);
+  console.log(`[AstroGuard] LLM — u/${prior.meta.username}, calling Gemini`);
   const apiKey = await getApiKey();
   if (!apiKey) {
-    console.warn('[RedBot] LLM — skipped, no API key set');
+    console.warn('[AstroGuard] LLM — skipped, no API key set');
     return { ...prior, tier: 2, llmSkipped: true, llmReason: 'No API key set' };
   }
 
@@ -781,7 +786,7 @@ Respond with ONLY valid JSON, no markdown fences:
     const aiScore = parsed.aiContentScore ?? 0;
     const aiNote = parsed.aiContentNote || '';
     const finalScore = Math.min(100, Math.round(prior.score * 0.3 + llmScore * 0.7));
-    console.log(`[RedBot] LLM — u/${m.username} bot=${llmScore} ai=${aiScore} final=${finalScore}`, parsed.reasoning);
+    console.log(`[AstroGuard] LLM — u/${m.username} bot=${llmScore} ai=${aiScore} final=${finalScore}`, parsed.reasoning);
 
     const llmSignals = [
       ...prior.signals,
@@ -805,7 +810,7 @@ Respond with ONLY valid JSON, no markdown fences:
       _sampleComments: prior._sampleComments,
     };
   } catch (err) {
-    console.error('[RedBot] LLM failed:', err);
+    console.error('[AstroGuard] LLM failed:', err);
     return { ...prior, tier: 2, llmSkipped: true, llmReason: err.message };
   }
 }
@@ -824,11 +829,11 @@ async function analyzeUser(username) {
 
   const cached = getCached(username);
   if (cached) {
-    console.log(`[RedBot] Cache hit for u/${username}`);
+    console.log(`[AstroGuard] Cache hit for u/${username}`);
     return cached;
   }
 
-  console.log(`[RedBot] Starting analysis for u/${username}`);
+  console.log(`[AstroGuard] Starting analysis for u/${username}`);
 
   try {
     const aboutData = await fetchUserAbout(username);
@@ -836,17 +841,17 @@ async function analyzeUser(username) {
     const heuristic = runHeuristics(aboutData, commentsData);
 
     if (heuristic.score < LLM_THRESHOLD) {
-      console.log(`[RedBot] u/${username} — heuristic=${heuristic.score}%, below LLM threshold, done`);
+      console.log(`[AstroGuard] u/${username} — heuristic=${heuristic.score}%, below LLM threshold, done`);
       setCache(username, heuristic);
       return heuristic;
     }
 
-    console.log(`[RedBot] u/${username} — heuristic=${heuristic.score}%, advancing to LLM`);
+    console.log(`[AstroGuard] u/${username} — heuristic=${heuristic.score}%, advancing to LLM`);
     const llmResult = await runLLM(aboutData, commentsData, heuristic);
     setCache(username, llmResult);
     return llmResult;
   } catch (err) {
-    console.error(`[RedBot] Analysis failed for u/${username}:`, err.message);
+    console.error(`[AstroGuard] Analysis failed for u/${username}:`, err.message);
 
     let errorType = 'error';
     if (err.message === 'ratelimited') errorType = 'ratelimited';
@@ -870,7 +875,7 @@ async function analyzeUser(username) {
 // ----- Deep analysis (forced LLM) -----
 
 async function deepAnalyzeUser(username) {
-  console.log(`[RedBot] Deep analysis — heuristics + LLM for u/${username}`);
+  console.log(`[AstroGuard] Deep analysis — heuristics + LLM for u/${username}`);
   try {
     const aboutData = await fetchUserAbout(username);
     const commentsData = await fetchUserComments(username);
@@ -878,10 +883,10 @@ async function deepAnalyzeUser(username) {
     const llmResult = await runLLM(aboutData, commentsData, heuristic);
 
     setCache(username, llmResult);
-    console.log(`[RedBot] Deep analysis complete for u/${username} — score=${llmResult.score}`);
+    console.log(`[AstroGuard] Deep analysis complete for u/${username} — score=${llmResult.score}`);
     return llmResult;
   } catch (err) {
-    console.error(`[RedBot] Deep analysis failed for u/${username}:`, err.message);
+    console.error(`[AstroGuard] Deep analysis failed for u/${username}:`, err.message);
 
     let errorType = 'error';
     if (err.message === 'ratelimited') errorType = 'ratelimited';
@@ -958,7 +963,7 @@ const tabScanPending = new Map();
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'analyzeUser') {
-    console.log(`[RedBot] Message: analyzeUser — u/${msg.username}`);
+    console.log(`[AstroGuard] Message: analyzeUser — u/${msg.username}`);
     const tabId = sender.tab?.id;
     analyzeUser(msg.username).then(result => {
       if (tabId) {
@@ -972,7 +977,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg.type === 'deepAnalyze') {
-    console.log(`[RedBot] Deep analysis requested for u/${msg.username}`);
+    console.log(`[AstroGuard] Deep analysis requested for u/${msg.username}`);
     deepAnalyzeUser(msg.username).then(result => {
       const tabId = sender.tab?.id;
       if (tabId) {

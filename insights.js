@@ -1,5 +1,5 @@
 /* ============================================================
-   RedBot — Insights Dashboard
+   AstroGuard — Insights Dashboard
    Loads persisted scan data from chrome.storage.local and
    renders an AI-safety-oriented dashboard.
    ============================================================ */

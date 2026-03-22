@@ -1,5 +1,5 @@
 /* ============================================================
-   RedBot — Popup styles
+   AstroGuard — Popup styles
    ============================================================ */
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -262,6 +262,7 @@ h2 {
 .udot.bot         { background: #ef4444; }
 .udot.known       { background: #8b5cf6; }
 .udot.ratelimited { background: #3b82f6; }
+.udot.unknown     { background: #94a3b8; }
 
 .uname {
   font-size: 13px;
@@ -289,6 +290,7 @@ h2 {
 .uscore.bot         { color: #ef4444; }
 .uscore.known       { color: #8b5cf6; }
 .uscore.ratelimited { color: #3b82f6; }
+.uscore.unknown     { color: #94a3b8; }
 
 .rate-limit-notice {
   text-align: center;

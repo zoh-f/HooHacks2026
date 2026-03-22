@@ -1,5 +1,5 @@
 /* ============================================================
-   RedBot — Injected styles for badges and detail cards
+   AstroGuard — Injected styles for badges and detail cards
    ============================================================ */
 
 /* ---- Badge ---- */
@@ -90,6 +90,11 @@
 .redbot-card-human {
   background: linear-gradient(135deg, rgba(34, 197, 94, 0.15), transparent);
   border-bottom: 1px solid rgba(34, 197, 94, 0.2);
+}
+
+.redbot-card-unknown {
+  background: linear-gradient(135deg, rgba(148, 163, 184, 0.15), transparent);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
 }
 
 .redbot-card-suspicious {
@@ -302,6 +307,11 @@
   border: 1px solid rgba(239, 68, 68, 0.2);
 }
 
+.redbot-pp-unknown {
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
 .redbot-pp-score {
   font-size: 28px;
   font-weight: 800;
@@ -311,6 +321,7 @@
 .redbot-pp-human .redbot-pp-score { color: #22c55e; }
 .redbot-pp-suspicious .redbot-pp-score { color: #f59e0b; }
 .redbot-pp-bot .redbot-pp-score { color: #ef4444; }
+.redbot-pp-unknown .redbot-pp-score { color: #94a3b8; }
 
 .redbot-pp-label {
   font-size: 14px;
