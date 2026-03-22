@@ -24,28 +24,12 @@
     'explainlikeimfive', 'askscience', 'askhistorians', 'asksocialscience',
   ];
 
-  const ENTERTAINMENT_KEYWORDS = [
-    'meme', 'funny', 'gaming', 'game', 'aww', 'cute', 'animal', 'cat', 'dog',
-    'dankmeme', 'shitpost', 'wholesome', 'comic', 'anime', 'manga',
-    'movie', 'film', 'television', 'tv', 'netflix', 'hbo',
-    'music', 'hiphop', 'rock', 'edm', 'sport', 'nba', 'nfl', 'soccer',
-    'football', 'baseball', 'hockey', 'formula1', 'motorsport',
-    'food', 'cooking', 'recipe', 'travel', 'photo', 'art', 'drawing',
-    'fashion', 'makeup', 'fitness', 'yoga', 'crafts', 'diy',
-    'minecraft', 'fortnite', 'valorant', 'leagueoflegends', 'csgo',
-    'pokemon', 'zelda', 'mario', 'steam', 'pcgaming', 'playstation', 'xbox',
-    'tiktok', 'youtube', 'twitch', 'streaming', 'celebrit',
-  ];
-
   function classifySubreddit(name) {
     const lc = name.toLowerCase();
     let seriousHits = 0;
-    let entertainmentHits = 0;
     for (const kw of SERIOUS_KEYWORDS) if (lc.includes(kw)) seriousHits++;
-    for (const kw of ENTERTAINMENT_KEYWORDS) if (lc.includes(kw)) entertainmentHits++;
-    if (seriousHits > entertainmentHits) return 'serious';
-    if (entertainmentHits > seriousHits) return 'entertainment';
-    return 'unknown';
+    if (seriousHits > 0) return 'serious';
+    return 'entertainment';
   }
 
   // ---- Helpers ----
@@ -135,13 +119,20 @@
   function renderComparison(subs) {
     show('secComparison');
 
-    let seriousScans = 0, seriousSum = 0, seriousSubs = 0;
-    let entScans = 0, entSum = 0, entSubs = 0;
+    let seriousScans = 0, seriousSum = 0;
+    let entScans = 0, entSum = 0;
+    const seriousNames = [];
+    const entNames = [];
 
     for (const [name, v] of Object.entries(subs)) {
       const cat = classifySubreddit(name);
-      if (cat === 'serious') { seriousScans += v.scans; seriousSum += v.scoreSum; seriousSubs++; }
-      else if (cat === 'entertainment') { entScans += v.scans; entSum += v.scoreSum; entSubs++; }
+      if (cat === 'serious') {
+        seriousScans += v.scans; seriousSum += v.scoreSum;
+        seriousNames.push(name);
+      } else {
+        entScans += v.scans; entSum += v.scoreSum;
+        entNames.push(name);
+      }
     }
 
     const sAvg = seriousScans > 0 ? Math.round(seriousSum / seriousScans) : null;
@@ -169,8 +160,8 @@
         </div>`;
     }
 
-    let html = card('Policy / Discussion', sAvg, seriousScans, seriousSubs, 'policy/news');
-    html += card('Entertainment / General', eAvg, entScans, entSubs, 'entertainment');
+    let html = card('Policy / Discussion', sAvg, seriousScans, seriousNames.length, 'policy/news');
+    html += card('Entertainment / General', eAvg, entScans, entNames.length, 'entertainment');
 
     if (sAvg !== null && eAvg !== null) {
       const diff = Math.abs(sAvg - eAvg);
@@ -182,7 +173,25 @@
       }
     }
 
+    function subList(title, names) {
+      if (names.length === 0) return '';
+      const items = names.sort().map(n => `<li>r/${n}</li>`).join('');
+      return `<div class="compare-sub-list"><h4>${title}</h4><ul>${items}</ul></div>`;
+    }
+    html += '<div class="compare-subs">';
+    html += subList('Policy / Discussion', seriousNames);
+    html += subList('Entertainment / General', entNames);
+    html += '</div>';
+
     document.getElementById('compareRow').innerHTML = html;
+  }
+
+  function heatColor(botPct, intensity) {
+    if (intensity === 0) return '#161b22';
+    const hue = 130 - (botPct / 100) * 130;
+    const sat = 55 + intensity * 7;
+    const light = 12 + intensity * 9;
+    return `hsl(${Math.round(hue)}, ${sat}%, ${light}%)`;
   }
 
   function renderTemporal(timeline) {
@@ -197,18 +206,161 @@
       if (entry.score >= 40) buckets[day].botCount++;
     }
 
-    const days = Object.entries(buckets).sort((a, b) => a[0].localeCompare(b[0]));
-    const maxCount = Math.max(...days.map(([, b]) => b.count), 1);
+    const counts = Object.values(buckets).map(b => b.count);
+    const maxCount = Math.max(...counts, 1);
+    const q1 = maxCount * 0.25, q2 = maxCount * 0.5, q3 = maxCount * 0.75;
+    function intensity(count) {
+      if (count === 0) return 0;
+      if (count <= q1) return 1;
+      if (count <= q2) return 2;
+      if (count <= q3) return 3;
+      return 4;
+    }
 
-    document.getElementById('temporalChart').innerHTML = days.map(([day, b]) => {
-      const h = Math.max(4, (b.count / maxCount) * 100);
-      const botPct = pct(b.botCount, b.count);
-      const r = Math.min(255, Math.round(botPct * 2.55));
-      const g = Math.min(255, Math.round((100 - botPct) * 2.55));
-      const label = new Date(day + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-      return `<div class="t-bar" style="height:${h}%;background:rgb(${r},${g},80);" data-tip="${label}: ${b.count} scans, ${botPct}% bots"></div>`;
-    }).join('');
+    const sorted = Object.keys(buckets).sort();
+    const endDate = new Date(sorted[sorted.length - 1] + 'T00:00:00');
+    const numWeeks = 17;
+    const startDate = new Date(endDate);
+    startDate.setDate(startDate.getDate() - numWeeks * 7 + 1);
+    while (startDate.getDay() !== 0) startDate.setDate(startDate.getDate() - 1);
+
+    const weeks = [];
+    const cursor = new Date(startDate);
+    while (cursor <= endDate) {
+      const week = [];
+      for (let d = 0; d < 7; d++) {
+        const key = cursor.toISOString().slice(0, 10);
+        const b = buckets[key] || null;
+        week.push({ key, date: new Date(cursor), data: b });
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      weeks.push(week);
+    }
+
+    const monthLabels = [];
+    let lastMonth = -1;
+    weeks.forEach((week, wi) => {
+      const first = week.find(d => d.date.getDate() <= 7 && d.date.getMonth() !== lastMonth);
+      if (first) {
+        lastMonth = first.date.getMonth();
+        monthLabels.push({ wi, label: first.date.toLocaleDateString(undefined, { month: 'short' }) });
+      }
+    });
+
+    const cellW = 13, gap = 3;
+    const monthsHtml = (() => {
+      let html = '';
+      let prev = 0;
+      for (const { wi, label } of monthLabels) {
+        const left = (wi - prev) * (cellW + gap);
+        html += `<span style="width:${left}px"></span>${label}`;
+        prev = wi;
+      }
+      return html;
+    })();
+
+    const dayLabels = ['', 'Mon', '', 'Wed', '', 'Fri', ''];
+
+    const chartEl = document.getElementById('temporalChart');
+    chartEl.className = 'heatmap-wrap';
+    chartEl.innerHTML =
+      `<div class="heatmap-months">${monthsHtml}</div>` +
+      `<div class="heatmap-body">` +
+        `<div class="heatmap-days">${dayLabels.map(l => `<span>${l}</span>`).join('')}</div>` +
+        `<div class="heatmap-grid">${weeks.map(week =>
+          `<div class="heatmap-week">${week.map(cell => {
+            const b = cell.data;
+            const count = b ? b.count : 0;
+            const botP = b ? pct(b.botCount, b.count) : 0;
+            const color = heatColor(botP, intensity(count));
+            const dateStr = cell.date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+            const tipText = count === 0
+              ? `${dateStr}: No scans`
+              : `${dateStr}: ${count} scan${count !== 1 ? 's' : ''}, ${botP}% bots`;
+            return `<div class="heatmap-cell" style="background:${color}" data-tip="${tipText}"></div>`;
+          }).join('')}</div>`
+        ).join('')}</div>` +
+      `</div>` +
+      `<div class="heatmap-legend">` +
+        `<span>Less</span>` +
+        `<span class="heatmap-legend-cell" style="background:#161b22"></span>` +
+        `<span class="heatmap-legend-cell" style="background:${heatColor(0, 1)}"></span>` +
+        `<span class="heatmap-legend-cell" style="background:${heatColor(0, 3)}"></span>` +
+        `<span class="heatmap-legend-cell" style="background:${heatColor(50, 2)}"></span>` +
+        `<span class="heatmap-legend-cell" style="background:${heatColor(100, 3)}"></span>` +
+        `<span class="heatmap-legend-cell" style="background:${heatColor(100, 4)}"></span>` +
+        `<span>More bots</span>` +
+      `</div>`;
+
+    let tip = document.getElementById('temporal-tooltip');
+    if (!tip) {
+      tip = document.createElement('div');
+      tip.id = 'temporal-tooltip';
+      tip.className = 'chart-tooltip';
+      document.body.appendChild(tip);
+    }
+    chartEl.querySelectorAll('.heatmap-cell').forEach(cell => {
+      cell.addEventListener('mouseenter', () => {
+        tip.textContent = cell.dataset.tip;
+        tip.style.display = 'block';
+        const rect = cell.getBoundingClientRect();
+        tip.style.left = rect.left + rect.width / 2 + 'px';
+        tip.style.top = rect.top - 6 + 'px';
+      });
+      cell.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
+    });
   }
+
+  const SIGNAL_EXPLANATIONS = {
+    'Very new account': 'Accounts under 30 days old are frequently disposable bot accounts created for short-term campaigns.',
+    'New account': 'Accounts under 90 days old have less history to verify, a common trait of bot farms.',
+    'Young account': 'Accounts under 6 months may still be building a fake identity to appear legitimate.',
+    'Extreme karma rate': 'Gaining karma at an abnormally high rate suggests automated activity or karma farming.',
+    'High karma rate': 'Elevated karma gain speed can indicate coordinated upvoting or bot farming behavior.',
+    'Elevated karma rate': 'Above-average karma acquisition may reflect early-stage karma farming.',
+    'Default Reddit name': 'Auto-generated usernames (e.g. Adjective-Noun-1234) are a hallmark of mass-created bot accounts.',
+    'Random-looking name': 'Random alphanumeric usernames suggest the account was programmatically generated.',
+    'Default avatar': 'Not setting a custom avatar is common for bot accounts that skip personalization.',
+    'No bio': 'Empty profile descriptions suggest minimal effort to appear as a real user.',
+    'Unverified email': 'Lack of email verification is more common among throwaway or bot accounts.',
+    'Extreme karma imbalance': 'Having nearly all karma from one type (comment or post) suggests narrow automated behavior.',
+    'Karma imbalance': 'A skewed karma ratio can indicate specialized bot activity focused on one interaction type.',
+    'FirstNameLastName pattern': 'Usernames matching this pattern are commonly generated by bot account creation scripts.',
+    '"Bot" in username': 'The username explicitly contains "bot," which may indicate a self-identified automated account.',
+    'Self-identifies as bot': 'The account uses footers or disclaimers identifying itself as a bot.',
+    'Bot footer detected': 'Comments contain automated bot footers or signatures.',
+    'Mostly generic comments': 'A high ratio of vague, low-effort comments suggests templated or auto-generated responses.',
+    'Many generic comments': 'Multiple generic comments can indicate a bot padding its history with filler content.',
+    'Very repetitive (consecutive)': 'Posting nearly identical consecutive comments is a strong indicator of automated behavior.',
+    'Repetitive (consecutive)': 'Repeating similar comments in sequence suggests scripted posting patterns.',
+    'Very low sub diversity': 'Posting in very few subreddits suggests the account is targeting specific communities.',
+    'Low sub diversity': 'Limited subreddit variety may indicate a single-purpose or campaign-driven account.',
+    'Uniform comment lengths': 'Comments with suspiciously similar character counts suggest templated generation.',
+    'Low length variance': 'Little variation in comment length can indicate automated or formulaic writing.',
+    'Median interval < 1min': 'Posting faster than one comment per minute is difficult for humans but easy for bots.',
+    'Median interval < 3min': 'Very rapid posting intervals suggest possible automation or scripted behavior.',
+    'Extreme burst (5min)': 'Posting many comments within a 5-minute window indicates likely automated rapid-fire activity.',
+    'Comment burst (5min)': 'Clusters of comments in short time spans can indicate scripted behavior.',
+    'Most comments have links': 'Accounts that primarily post links may be running spam or promotional campaigns.',
+    'Many comments have links': 'Frequent link posting can indicate promotional bot activity.',
+    'Likely AI-written comments': 'Comments show strong markers of large language model generation (e.g., hedging phrases, list formatting).',
+    'Possible AI-written comments': 'Some comments exhibit patterns consistent with AI text generation.',
+    'Long dormancy before activity': 'A long inactive period followed by sudden activity can indicate a compromised or sold account.',
+    'Dormancy gap': 'Gaps in activity may suggest the account changed hands or was reactivated for a campaign.',
+    'Mostly AskReddit comments': 'Heavy AskReddit activity is a common karma-farming strategy for new bot accounts.',
+    'Heavy AskReddit activity': 'Concentrated AskReddit commenting is a well-known tactic for quickly building karma.',
+    'Hidden karma': 'High karma with few visible comments suggests deleted history or manipulated scores.',
+    'Karma with few comments': 'A mismatch between karma and visible activity may indicate scrubbed post history.',
+    'HTML entity artifacts': 'HTML artifacts (&amp;, &gt;, etc.) in comments suggest copy-paste from automated pipelines.',
+    'Quote format artifacts': 'Comments that are entirely quoted text may be auto-scraped from other sources.',
+    'Quote format artifact': 'Quoted text in comments can indicate content copied from elsewhere automatically.',
+    'Suspicious link domains': 'Links to .live, .shop, or similar domains are commonly associated with spam bots.',
+    'Many duplicate comments': 'Posting identical comments repeatedly is a clear indicator of automated spamming.',
+    'Duplicate comments': 'Repeated identical comments suggest scripted behavior.',
+    'LLM bot analysis': 'Gemini AI analysis flagged behavioral patterns consistent with bot activity.',
+    'AI content detection': 'Statistical analysis suggests the writing style is consistent with AI-generated text.',
+    'Known bot': 'This account is in the known-bot database.',
+  };
 
   function renderSignals(subs) {
     const agg = {};
@@ -223,15 +375,20 @@
     show('secSignals');
 
     const maxVal = sorted[0][1];
-    document.getElementById('signalBars').innerHTML = sorted.map(([name, count]) => `
-      <div class="bar-row">
-        <span class="bar-label">${name}</span>
-        <div class="bar-track">
-          <div class="bar-fill signal" style="width:${(count / maxVal) * 100}%"></div>
-          <span class="bar-value">${count}</span>
-        </div>
-      </div>
-    `).join('');
+    document.getElementById('signalBars').innerHTML = sorted.map(([name, count]) => {
+      const desc = SIGNAL_EXPLANATIONS[name] || '';
+      return `
+        <div class="signal-row">
+          <div class="signal-main">
+            <span class="signal-name">${name}</span>
+            <div class="bar-track">
+              <div class="bar-fill signal" style="width:${(count / maxVal) * 100}%"></div>
+              <span class="bar-value">${count}</span>
+            </div>
+          </div>
+          ${desc ? `<div class="signal-desc">${desc}</div>` : ''}
+        </div>`;
+    }).join('');
   }
 
   function renderCompromised(subs) {

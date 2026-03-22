@@ -125,6 +125,38 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ---- Signal rows (wider labels + descriptions) ---- */
+.signal-chart { display: flex; flex-direction: column; gap: 0; }
+.signal-row {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 0;
+  border-bottom: 1px solid #1e293b;
+}
+.signal-row:last-child { border-bottom: none; }
+.signal-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.signal-name {
+  flex: 0 0 200px;
+  text-align: right;
+  font-size: 13px;
+  font-weight: 600;
+  color: #e2e8f0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.signal-desc {
+  font-size: 11px;
+  color: #64748b;
+  padding-left: 210px;
+  margin-top: 3px;
+  line-height: 1.4;
+}
 .bar-track {
   flex: 1;
   background: #0f172a;
@@ -170,37 +202,91 @@ body {
 .compare-card .cv { font-size: 36px; font-weight: 800; }
 .compare-card .cl { font-size: 11px; color: #64748b; margin-top: 4px; }
 
-/* ---- Temporal chart (CSS-only sparkline) ---- */
-.temporal-chart {
-  display: flex;
-  align-items: flex-end;
-  gap: 2px;
-  height: 120px;
+/* ---- Temporal heatmap (GitHub-style calendar) ---- */
+.heatmap-wrap {
   background: #0f172a;
   border-radius: 8px;
-  padding: 12px 8px 8px;
+  padding: 16px;
   overflow-x: auto;
 }
-.t-bar {
-  flex: 0 0 22px;
-  border-radius: 3px 3px 0 0;
-  transition: height .4s ease;
-  position: relative;
+.heatmap-months {
+  display: flex;
+  font-size: 10px;
+  color: #64748b;
+  margin-bottom: 4px;
+  padding-left: 32px;
 }
-.t-bar:hover::after {
-  content: attr(data-tip);
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 50%;
-  transform: translateX(-50%);
+.heatmap-months span {
+  flex: none;
+}
+.heatmap-body {
+  display: flex;
+  gap: 0;
+}
+.heatmap-days {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-right: 6px;
+  flex: none;
+  width: 26px;
+}
+.heatmap-days span {
+  height: 13px;
+  font-size: 9px;
+  color: #64748b;
+  line-height: 13px;
+  text-align: right;
+}
+.heatmap-grid {
+  display: flex;
+  gap: 3px;
+}
+.heatmap-week {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.heatmap-cell {
+  width: 13px;
+  height: 13px;
+  border-radius: 2px;
+  background: #161b22;
+  outline: 1px solid rgba(255,255,255,.04);
+}
+.heatmap-cell:hover {
+  outline: 1px solid #94a3b8;
+}
+.heatmap-legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  padding-left: 32px;
+  font-size: 10px;
+  color: #64748b;
+}
+.heatmap-legend-cell {
+  width: 13px;
+  height: 13px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.chart-tooltip {
+  position: fixed;
+  transform: translate(-50%, -100%);
   background: #1e293b;
   border: 1px solid #475569;
   color: #e2e8f0;
-  font-size: 10px;
-  padding: 3px 7px;
-  border-radius: 4px;
+  font-size: 11px;
+  padding: 5px 10px;
+  border-radius: 5px;
   white-space: nowrap;
-  z-index: 5;
+  z-index: 100;
+  pointer-events: none;
+  display: none;
+  box-shadow: 0 4px 12px rgba(0,0,0,.4);
 }
 
 /* ---- Data table ---- */
@@ -254,11 +340,48 @@ body {
   color: #94a3b8;
   padding-top: 8px;
 }
+.compare-subs {
+  flex-basis: 100%;
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.compare-sub-list {
+  flex: 1 1 200px;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 12px 16px;
+}
+.compare-sub-list h4 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  color: #94a3b8;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+.compare-sub-list ul {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.compare-sub-list li {
+  font-size: 11px;
+  background: #1e293b;
+  padding: 2px 8px;
+  border-radius: 4px;
+  color: #cbd5e1;
+}
 
 /* ---- Responsive ---- */
 @media (max-width: 700px) {
   .container { padding: 14px; }
   .bar-label { flex: 0 0 100px; font-size: 11px; }
+  .signal-name { flex: 0 0 120px; font-size: 11px; }
+  .signal-desc { padding-left: 130px; }
   .compare-card .cv { font-size: 28px; }
   .stats-row { gap: 8px; }
   .stat-card { padding: 12px; }

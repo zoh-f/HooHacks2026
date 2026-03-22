@@ -308,6 +308,11 @@
   let rlTimer = null;
   let rlCountdown = null;
 
+  function reportScanProgress() {
+    const pending = scanQueue.length + (busy ? 1 : 0);
+    chrome.runtime.sendMessage({ type: 'scanProgress', pending }).catch(() => {});
+  }
+
   function attachBadge(el, result) {
     if (el.nextElementSibling?.classList.contains('redbot-badge')) return;
     const parent = el.parentElement;
@@ -338,7 +343,10 @@
   }
 
   async function drain() {
-    if (busy || scanQueue.length === 0) return;
+    if (busy || scanQueue.length === 0) {
+      if (!busy && scanQueue.length === 0) reportScanProgress();
+      return;
+    }
     if (rlUntil > Date.now()) return;
     busy = true;
 
@@ -374,6 +382,7 @@
     }
 
     busy = false;
+    reportScanProgress();
     drain();
   }
 
@@ -474,6 +483,7 @@
         scanQueue.push(username);
       }
     }
+    reportScanProgress();
     drain();
   }
 

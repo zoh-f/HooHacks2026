@@ -16,19 +16,19 @@
   </header>
 
   <div class="summary">
-    <div class="stat">
+    <div class="stat" id="totalScanned">
       <span class="stat-val" id="statTotal">0</span>
       <span class="stat-lbl">Scanned</span>
     </div>
-    <div class="stat">
+    <div class="stat" id="totalBots">
       <span class="stat-val val-red" id="statBots">0</span>
       <span class="stat-lbl">Bots</span>
     </div>
-    <div class="stat">
+    <div class="stat" id="totalSus">
       <span class="stat-val val-yellow" id="statSus">0</span>
       <span class="stat-lbl">Suspicious</span>
     </div>
-    <div class="stat">
+    <div class="stat" id="totalHuman">
       <span class="stat-val val-green" id="statHuman">0</span>
       <span class="stat-lbl">Human</span>
     </div>
@@ -39,9 +39,16 @@
       <h2>Scanned Users</h2>
       <button id="btnScan" class="btn btn-primary">Scan Page</button>
     </div>
-    <div id="userList" class="user-list">
-      <p class="empty">Open a Reddit thread to start scanning.</p>
+    <div class="user-list-wrap">
+      <div id="userList" class="user-list">
+        <p class="empty">Open a Reddit thread to start scanning.</p>
+      </div>
+      <div id="scanLoader" class="wrap" aria-hidden="true">
+        <div class="bounceball"></div>
+        <div class="text">NOW LOADING</div>
+      </div>
     </div>
+
   </section>
 
   <section class="section">
@@ -81,7 +88,7 @@
     <label for="botThreshold">Action Threshold</label>
     <div class="row row-compact">
       <input type="number" id="botThreshold" min="0" max="100" value="40" class="input-num">
-      <span class="hint-inline">% — comments at or above this are minimized</span>
+      <span class="hint-inline">% — comments at or above this are minimized. Applies to parent comments only.</span>
     </div>
 
     <button id="btnClear" class="btn btn-ghost full">Clear Cache</button>

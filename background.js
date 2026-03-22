@@ -679,6 +679,41 @@ async function getApiKey() {
   );
 }
 
+function safeParseGeminiJSON(raw) {
+  const text = raw.replace(/```json\n?|\n?```/g, '').trim();
+
+  try { return JSON.parse(text); } catch (_) {}
+
+  // Gemini sometimes truncates mid-string — try closing open strings/braces
+  let patched = text;
+  const openQuotes = (patched.match(/(?<!\\)"/g) || []).length;
+  if (openQuotes % 2 !== 0) patched += '"';
+  const openBraces = (patched.match(/\{/g) || []).length - (patched.match(/\}/g) || []).length;
+  patched += '}'.repeat(Math.max(0, openBraces));
+  const openBrackets = (patched.match(/\[/g) || []).length - (patched.match(/\]/g) || []).length;
+  patched += ']'.repeat(Math.max(0, openBrackets));
+  try { return JSON.parse(patched); } catch (_) {}
+
+  // Handle trailing comma before the closing brace we added
+  try { return JSON.parse(patched.replace(/,\s*([}\]])/g, '$1')); } catch (_) {}
+
+  // Last resort: extract fields with regex
+  const score = text.match(/"score"\s*:\s*(\d+)/);
+  const reasoning = text.match(/"reasoning"\s*:\s*"((?:[^"\\]|\\.)*)/) ;
+  const aiScore = text.match(/"aiContentScore"\s*:\s*(\d+)/);
+  const aiNote = text.match(/"aiContentNote"\s*:\s*"((?:[^"\\]|\\.)*)/) ;
+  if (score) {
+    return {
+      score: parseInt(score[1]),
+      reasoning: (reasoning ? reasoning[1] : 'Analysis truncated by model'),
+      aiContentScore: aiScore ? parseInt(aiScore[1]) : 0,
+      aiContentNote: aiNote ? aiNote[1] : '',
+    };
+  }
+
+  throw new SyntaxError('Could not parse LLM response');
+}
+
 async function runLLM(aboutPayload, commentsPayload, prior) {
   console.log(`[RedBot] LLM — u/${prior.meta.username}, calling Gemini`);
   const apiKey = await getApiKey();
@@ -740,7 +775,7 @@ Respond with ONLY valid JSON, no markdown fences:
 
     const json = await res.json();
     const text = json.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    const parsed = JSON.parse(text.replace(/```json\n?|\n?```/g, '').trim());
+    const parsed = safeParseGeminiJSON(text);
 
     const llmScore = parsed.score;
     const aiScore = parsed.aiContentScore ?? 0;
@@ -916,6 +951,8 @@ async function persistToInsights(username, result, subreddit, commentTs) {
 // ----- Message handling -----
 
 const tabResults = new Map();
+/** @type {Map<number, number>} tabId → scan queue depth (content script) */
+const tabScanPending = new Map();
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'analyzeUser') {
@@ -949,14 +986,28 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'getTabResults') {
     chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
       const id = tabs[0]?.id;
-      sendResponse(tabResults.get(id) || {});
+      sendResponse({
+        results: tabResults.get(id) || {},
+        pending: id != null ? (tabScanPending.get(id) ?? 0) : 0,
+      });
     });
+    return true;
+  }
+
+  if (msg.type === 'scanProgress') {
+    const tabId = sender.tab?.id;
+    if (tabId != null) {
+      if (msg.pending > 0) tabScanPending.set(tabId, msg.pending);
+      else tabScanPending.delete(tabId);
+    }
+    sendResponse({ ok: true });
     return true;
   }
 
   if (msg.type === 'clearCache') {
     cache.clear();
     tabResults.clear();
+    tabScanPending.clear();
     sendResponse({ ok: true });
     return true;
   }
@@ -1002,4 +1053,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 });
 
-chrome.tabs.onRemoved.addListener(id => tabResults.delete(id));
+chrome.tabs.onRemoved.addListener(id => {
+  tabResults.delete(id);
+  tabScanPending.delete(id);
+});

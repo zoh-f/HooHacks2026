@@ -381,7 +381,9 @@
 }
 
 .redbot-pp-deep-btn {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 100%;
   margin-top: 16px;
   padding: 12px;
@@ -389,10 +391,14 @@
   color: #fff;
   font-size: 14px;
   font-weight: 700;
+  line-height: 1.2;
   border: none;
   border-radius: 10px;
   cursor: pointer;
   transition: opacity 0.15s, transform 0.15s;
+  text-align: center;
+  box-sizing: border-box;
+  min-height: 44px;
 }
 
 .redbot-pp-deep-btn:hover {
