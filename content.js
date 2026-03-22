@@ -8,7 +8,8 @@
   'use strict';
 
   const ATTR = 'data-redbot';
-  const PROCESSED = new Set();
+  const resultCache = new Map();     // username → analysis result
+  const pendingElements = new Map(); // username → [elements waiting for badge]
 
   // ---- Settings (synced from popup) ----
 
@@ -176,7 +177,7 @@
         <div class="redbot-card-body">
           <div class="redbot-card-label" style="color:#3b82f6">Rate Limited</div>
           <p style="font-size:12px;color:#94a3b8;line-height:1.5;margin-top:8px">
-            Reddit is rate limiting requests. Please wait a minute and try scanning again.
+            Reddit is limiting requests. Please wait before trying again.
           </p>
         </div>`;
     } else {
@@ -198,10 +199,10 @@
           <div class="redbot-card-chips">
             ${r.meta?.ageDays != null ? `<span class="redbot-chip">Age: ${r.meta.ageDays}d</span>` : ''}
             ${r.meta?.totalKarma != null ? `<span class="redbot-chip">Karma: ${r.meta.totalKarma.toLocaleString()}</span>` : ''}
-            <span class="redbot-chip">Tier ${r.tier}</span>
-            ${r.t1Score != null ? `<span class="redbot-chip">T1: ${r.t1Score}</span>` : ''}
-            ${r.t2Score != null ? `<span class="redbot-chip">T2: ${r.t2Score}</span>` : ''}
-            ${r.t3Score != null ? `<span class="redbot-chip">T3: ${r.t3Score}</span>` : ''}
+            ${r.heuristicScore != null ? `<span class="redbot-chip">Heuristic: ${r.heuristicScore}</span>` : ''}
+            ${r.trustMultiplier != null && r.trustMultiplier < 1 ? `<span class="redbot-chip">Trust: x${r.trustMultiplier}</span>` : ''}
+            ${r.llmScore != null ? `<span class="redbot-chip">LLM: ${r.llmScore}</span>` : ''}
+            <span class="redbot-chip">${r.tier === 2 ? 'LLM verified' : 'Heuristic only'}</span>
           </div>
           <div class="redbot-card-sigs">
             <div class="redbot-card-sigs-title">Signals</div>
@@ -213,8 +214,13 @@
           </div>
           ${r.llmReasoning ? `
             <div class="redbot-card-llm">
-              <div class="redbot-card-sigs-title">AI Analysis</div>
+              <div class="redbot-card-sigs-title">Bot Analysis (LLM)</div>
               <p>${r.llmReasoning}</p>
+            </div>` : ''}
+          ${r.aiContentScore > 0 ? `
+            <div class="redbot-card-llm">
+              <div class="redbot-card-sigs-title">AI Content Detection</div>
+              <p>${r.aiContentScore}% AI-written — ${r.aiContentNote || 'No details'}</p>
             </div>` : ''}
           ${r.llmSkipped ? `
             <div class="redbot-card-llm">
@@ -268,18 +274,36 @@
   const scanQueue = [];
   let busy = false;
 
+  function attachBadge(el, result) {
+    if (el.nextElementSibling?.classList.contains('redbot-badge')) return;
+    const badge = makeBadge(result.score, result.tier, result);
+    el.after(badge);
+    el.setAttribute(ATTR, 'done');
+    badge.addEventListener('click', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      document.querySelectorAll('.redbot-card').forEach(c => c.remove());
+      badge.after(makeCard(result));
+    });
+    applyCommentAction(el, result);
+  }
+
+  function flushPending(username, result) {
+    resultCache.set(username, result);
+    const waiting = pendingElements.get(username) || [];
+    for (const { el, spinner } of waiting) {
+      if (spinner) spinner.remove();
+      attachBadge(el, result);
+    }
+    pendingElements.delete(username);
+  }
+
   async function drain() {
     if (busy || scanQueue.length === 0) return;
     busy = true;
 
-    const { el, username } = scanQueue.shift();
+    const username = scanQueue.shift();
     console.log(`[RedBot] Scanning u/${username}...`);
-
-    const dot = document.createElement('span');
-    dot.className = 'redbot-badge redbot-spin';
-    dot.textContent = '···';
-    el.after(dot);
-    el.setAttribute(ATTR, 'pending');
 
     try {
       const result = await chrome.runtime.sendMessage({
@@ -288,25 +312,11 @@
       });
 
       console.log(`[RedBot] u/${username} → score=${result.score} tier=${result.tier}`, result.errorType || '');
-      dot.remove();
-      const badge = makeBadge(result.score, result.tier, result);
-      el.after(badge);
-      el.setAttribute(ATTR, 'done');
-
-      badge.addEventListener('click', e => {
-        e.preventDefault();
-        e.stopPropagation();
-        document.querySelectorAll('.redbot-card').forEach(c => c.remove());
-        badge.after(makeCard(result));
-      });
-
-      applyCommentAction(el, result);
+      flushPending(username, result);
     } catch (err) {
       console.error(`[RedBot] Error scanning u/${username}:`, err);
-      dot.remove();
-      const badge = makeBadge(-1, 0, null);
-      el.after(badge);
-      el.setAttribute(ATTR, 'error');
+      const errResult = { score: -1, tier: 0, signals: [], error: err.message };
+      flushPending(username, errResult);
     }
 
     busy = false;
@@ -318,15 +328,35 @@
   function scanPage() {
     if (botAction === 'off') return;
     const els = getUsernameElements();
-    const newUsers = els.filter(e => !PROCESSED.has(e.username));
-    console.log(`[RedBot] Page scan: found ${els.length} usernames, ${newUsers.length} new`);
+    console.log(`[RedBot] Page scan: found ${els.length} username elements`);
+
+    const newUsernames = new Set();
+
     for (const { el, username } of els) {
-      if (PROCESSED.has(username)) {
-        el.setAttribute(ATTR, 'dup');
+      const nextSib = el.nextElementSibling;
+      if (nextSib?.classList.contains('redbot-badge') || nextSib?.classList.contains('redbot-spin')) continue;
+
+      if (resultCache.has(username)) {
+        attachBadge(el, resultCache.get(username));
         continue;
       }
-      PROCESSED.add(username);
-      scanQueue.push({ el, username });
+
+      const spinner = document.createElement('span');
+      spinner.className = 'redbot-badge redbot-spin';
+      spinner.textContent = '···';
+      el.after(spinner);
+      el.setAttribute(ATTR, 'pending');
+
+      if (!pendingElements.has(username)) pendingElements.set(username, []);
+      pendingElements.get(username).push({ el, spinner });
+
+      newUsernames.add(username);
+    }
+
+    for (const username of newUsernames) {
+      if (!scanQueue.includes(username)) {
+        scanQueue.push(username);
+      }
     }
     drain();
   }
@@ -448,7 +478,7 @@
     else { cls = 'human'; label = 'Likely Human'; }
 
     const scoreDisplay = r.score < 0 ? '--' : `${r.score}%`;
-    const tierLabel = r.tier > 0 ? `Tier ${r.tier} analysis` : '';
+    const tierLabel = r.tier === 2 ? 'LLM verified' : r.tier === 1 ? 'Heuristic only' : '';
 
     const exampleComments = r._sampleComments || [];
     const commentsHtml = exampleComments.length > 0
@@ -474,9 +504,9 @@
       <div class="redbot-pp-chips">
         ${r.meta?.ageDays != null ? `<span class="redbot-chip">Age: ${r.meta.ageDays}d</span>` : ''}
         ${r.meta?.totalKarma != null ? `<span class="redbot-chip">Karma: ${r.meta.totalKarma.toLocaleString()}</span>` : ''}
-        ${r.t1Score != null ? `<span class="redbot-chip">T1: ${r.t1Score}</span>` : ''}
-        ${r.t2Score != null ? `<span class="redbot-chip">T2: ${r.t2Score}</span>` : ''}
-        ${r.t3Score != null ? `<span class="redbot-chip">T3: ${r.t3Score}</span>` : ''}
+        ${r.heuristicScore != null ? `<span class="redbot-chip">Heuristic: ${r.heuristicScore}</span>` : ''}
+        ${r.trustMultiplier != null && r.trustMultiplier < 1 ? `<span class="redbot-chip">Trust: x${r.trustMultiplier}</span>` : ''}
+        ${r.llmScore != null ? `<span class="redbot-chip">LLM: ${r.llmScore}</span>` : ''}
       </div>
 
       <div class="redbot-pp-section">
@@ -490,13 +520,19 @@
 
       ${r.llmReasoning ? `
         <div class="redbot-pp-section">
-          <div class="redbot-pp-section-title">AI Analysis</div>
+          <div class="redbot-pp-section-title">Bot Analysis (LLM)</div>
           <p class="redbot-pp-reasoning">${r.llmReasoning}</p>
+        </div>` : ''}
+
+      ${r.aiContentScore > 0 ? `
+        <div class="redbot-pp-section">
+          <div class="redbot-pp-section-title">AI Content Detection</div>
+          <p class="redbot-pp-reasoning">${r.aiContentScore}% likely AI-written — ${r.aiContentNote || 'No details'}</p>
         </div>` : ''}
 
       ${commentsHtml}
 
-      ${r.tier < 3 ? `
+      ${r.tier < 2 ? `
         <button class="redbot-pp-deep-btn" id="redbot-deep-btn">
           Deep Analysis (LLM)
         </button>
@@ -531,7 +567,8 @@
 
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.type === 'triggerScan') {
-      PROCESSED.clear();
+      resultCache.clear();
+      pendingElements.clear();
       document.querySelectorAll(`[${ATTR}]`).forEach(el => el.removeAttribute(ATTR));
       document.querySelectorAll('.redbot-badge, .redbot-card').forEach(el => el.remove());
       scanPage();
@@ -544,7 +581,8 @@
   function checkUrlChange() {
     if (location.href !== lastUrl) {
       lastUrl = location.href;
-      PROCESSED.clear();
+      resultCache.clear();
+      pendingElements.clear();
       const oldPanel = document.getElementById('redbot-profile-panel');
       if (oldPanel) oldPanel.remove();
       setTimeout(() => {
