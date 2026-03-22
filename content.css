@@ -52,9 +52,9 @@
 }
 
 .redbot-spin {
-  background: rgba(139, 92, 246, 0.12);
-  color: #8b5cf6;
-  border: 1px solid rgba(139, 92, 246, 0.25);
+  background: rgba(184, 164, 76, 0.12);
+  color: #b8a44c;
+  border: 1px solid rgba(184, 164, 76, 0.25);
   animation: redbot-pulse 1.4s ease-in-out infinite;
   cursor: default;
 }
@@ -70,8 +70,8 @@
   position: absolute;
   z-index: 2147483647;
   width: 340px;
-  background: #12121f;
-  border: 1px solid #2a2a4a;
+  background: #0f1f15;
+  border: 1px solid #1f3d2a;
   border-radius: 12px;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -177,7 +177,7 @@
 .redbot-card-llm {
   margin-top: 10px;
   padding-top: 8px;
-  border-top: 1px solid #2a2a4a;
+  border-top: 1px solid #1f3d2a;
 }
 
 .redbot-card-llm p {
@@ -196,8 +196,8 @@
   width: 320px;
   max-height: calc(100vh - 100px);
   overflow-y: auto;
-  background: #12121f;
-  border: 1px solid #2a2a4a;
+  background: #0f1f15;
+  border: 1px solid #1f3d2a;
   border-radius: 14px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -207,7 +207,7 @@
 
 #redbot-profile-panel::-webkit-scrollbar { width: 4px; }
 #redbot-profile-panel::-webkit-scrollbar-thumb {
-  background: #2a2a4a;
+  background: #1f3d2a;
   border-radius: 2px;
 }
 
@@ -216,8 +216,8 @@
   align-items: center;
   gap: 12px;
   padding: 16px 20px;
-  background: linear-gradient(135deg, #161628, #0f1a2e);
-  border-bottom: 1px solid #1e1e3a;
+  background: linear-gradient(135deg, #122218, #0f2218);
+  border-bottom: 1px solid #1a3325;
   cursor: grab;
   user-select: none;
 }
@@ -273,7 +273,7 @@
 .redbot-pp-loading {
   text-align: center;
   padding: 24px;
-  color: #8b5cf6;
+  color: #b8a44c;
   animation: redbot-pulse 1.4s ease-in-out infinite;
 }
 
@@ -346,7 +346,7 @@
 .redbot-pp-section {
   margin-top: 14px;
   padding-top: 10px;
-  border-top: 1px solid #1e1e3a;
+  border-top: 1px solid #1a3325;
 }
 
 .redbot-pp-section-title {
@@ -380,7 +380,7 @@
 
 .redbot-pp-comment-sub {
   font-size: 10px;
-  color: #3b82f6;
+  color: #b8a44c;
   font-weight: 600;
 }
 
@@ -398,7 +398,7 @@
   width: 100%;
   margin-top: 16px;
   padding: 12px;
-  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  background: linear-gradient(135deg, #245a3d, #3a8c5c);
   color: #fff;
   font-size: 14px;
   font-weight: 700;
@@ -444,27 +444,27 @@
 /* ---- Rate-limited states ---- */
 
 .redbot-ratelimit {
-  background: rgba(59, 130, 246, 0.12);
-  color: #3b82f6;
-  border: 1px solid rgba(59, 130, 246, 0.25);
+  background: rgba(45, 107, 74, 0.12);
+  color: #2d6b4a;
+  border: 1px solid rgba(45, 107, 74, 0.25);
 }
 
 .redbot-card-ratelimit {
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.15), transparent);
-  border-bottom: 1px solid rgba(59, 130, 246, 0.2);
+  background: linear-gradient(135deg, rgba(45, 107, 74, 0.15), transparent);
+  border-bottom: 1px solid rgba(45, 107, 74, 0.2);
 }
 
 .redbot-pp-ratelimit {
-  background: rgba(59, 130, 246, 0.08);
-  border: 1px solid rgba(59, 130, 246, 0.2);
+  background: rgba(45, 107, 74, 0.08);
+  border: 1px solid rgba(45, 107, 74, 0.2);
 }
 
-.redbot-pp-ratelimit .redbot-pp-score { color: #3b82f6; }
+.redbot-pp-ratelimit .redbot-pp-score { color: #2d6b4a; }
 
 .redbot-pp-ratelimit-msg {
   text-align: center;
   padding: 16px;
-  color: #3b82f6;
+  color: #2d6b4a;
   font-size: 13px;
   line-height: 1.5;
 }
@@ -474,18 +474,18 @@
   width: 100%;
   margin-top: 12px;
   padding: 10px;
-  background: rgba(59, 130, 246, 0.15);
-  color: #3b82f6;
+  background: rgba(45, 107, 74, 0.15);
+  color: #2d6b4a;
   font-size: 13px;
   font-weight: 600;
-  border: 1px solid rgba(59, 130, 246, 0.3);
+  border: 1px solid rgba(45, 107, 74, 0.3);
   border-radius: 8px;
   cursor: pointer;
   transition: background 0.15s;
 }
 
 .redbot-pp-retry-btn:hover {
-  background: rgba(59, 130, 246, 0.25);
+  background: rgba(45, 107, 74, 0.25);
 }
 
 /* ---- Comment minimize bar ---- */

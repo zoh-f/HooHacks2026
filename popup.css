@@ -7,7 +7,7 @@
 body {
   width: 360px;
   min-height: 420px;
-  background: #0c0c18;
+  background: #0a1a12;
   color: #e2e8f0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   font-size: 13px;
@@ -20,8 +20,8 @@ body {
   align-items: center;
   gap: 12px;
   padding: 16px 20px;
-  background: linear-gradient(135deg, #161628, #FF4500);
-  border-bottom: 1px solid #1e1e3a;
+  background: linear-gradient(135deg, #122218, #2d6b4a);
+  border-bottom: 1px solid #1a3325;
 }
 
 .logo {
@@ -48,8 +48,8 @@ body {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 1px;
-  background: #1e1e3a;
-  border-bottom: 1px solid #1e1e3a;
+  background: #1a3325;
+  border-bottom: 1px solid #1a3325;
 }
 
 #totalScanned.stat:hover {
@@ -118,7 +118,7 @@ body {
   flex-direction: column;
   align-items: center;
   padding: 12px 4px;
-  background: #0c0c18;
+  background: #0a1a12;
   cursor: pointer;
   position: relative;
 }
@@ -193,7 +193,7 @@ body {
 
 .section {
   padding: 14px 20px 16px;
-  border-bottom: 1px solid #131325;
+  border-bottom: 1px solid #152a1c;
 }
 
 .section-top {
@@ -220,7 +220,7 @@ h2 {
 
 .user-list::-webkit-scrollbar { width: 4px; }
 .user-list::-webkit-scrollbar-thumb {
-  background: #2a2a4a;
+  background: #1f3d2a;
   border-radius: 2px;
 }
 
@@ -260,8 +260,8 @@ h2 {
 .udot.human       { background: #22c55e; }
 .udot.suspicious  { background: #f59e0b; }
 .udot.bot         { background: #ef4444; }
-.udot.known       { background: #8b5cf6; }
-.udot.ratelimited { background: #3b82f6; }
+.udot.known       { background: #b8a44c; }
+.udot.ratelimited { background: #2d6b4a; }
 .udot.unknown     { background: #94a3b8; }
 
 .uname {
@@ -276,7 +276,7 @@ h2 {
 }
 
 .uname-link:hover {
-  color: #3b82f6;
+  color: #b8a44c;
   text-decoration: underline;
 }
 
@@ -288,19 +288,19 @@ h2 {
 .uscore.human       { color: #22c55e; }
 .uscore.suspicious  { color: #f59e0b; }
 .uscore.bot         { color: #ef4444; }
-.uscore.known       { color: #8b5cf6; }
-.uscore.ratelimited { color: #3b82f6; }
+.uscore.known       { color: #b8a44c; }
+.uscore.ratelimited { color: #2d6b4a; }
 .uscore.unknown     { color: #94a3b8; }
 
 .rate-limit-notice {
   text-align: center;
   padding: 8px 12px;
   margin-bottom: 6px;
-  background: rgba(59, 130, 246, 0.08);
-  border: 1px solid rgba(59, 130, 246, 0.2);
+  background: rgba(45, 107, 74, 0.08);
+  border: 1px solid rgba(45, 107, 74, 0.2);
   border-radius: 8px;
   font-size: 11px;
-  color: #3b82f6;
+  color: #2d6b4a;
   line-height: 1.4;
 }
 
@@ -323,21 +323,21 @@ h2 {
 }
 
 .btn-primary {
-  background: #3b82f6;
+  background: #2d6b4a;
   color: #fff;
 }
-.btn-primary:hover { background: #2563eb; }
+.btn-primary:hover { background: #245a3d; }
 
 .btn-green {
-  background: #22c55e;
+  background: #3a8c5c;
   color: #fff;
 }
-.btn-green:hover { background: #16a34a; }
+.btn-green:hover { background: #2d6b4a; }
 
 .btn-ghost {
   background: rgba(255, 255, 255, 0.04);
   color: #94a3b8;
-  border: 1px solid #1e1e3a;
+  border: 1px solid #1a3325;
 }
 
 .btn-ghost:hover {
@@ -367,8 +367,8 @@ input[type="password"],
 input[type="text"] {
   flex: 1;
   padding: 8px 12px;
-  background: #161628;
-  border: 1px solid #1e1e3a;
+  background: #122218;
+  border: 1px solid #1a3325;
   border-radius: 6px;
   color: #e2e8f0;
   font-size: 12px;
@@ -379,14 +379,14 @@ input[type="text"] {
 input[type="password"]:focus,
 input[type="text"]:focus,
 input[type="number"]:focus {
-  border-color: #3b82f6;
+  border-color: #2d6b4a;
 }
 
 .input-num {
   width: 56px;
   padding: 6px 8px;
-  background: #161628;
-  border: 1px solid #1e1e3a;
+  background: #122218;
+  border: 1px solid #1a3325;
   border-radius: 6px;
   color: #e2e8f0;
   font-size: 12px;
@@ -404,8 +404,8 @@ input[type="number"]:focus {
 .select {
   width: 100%;
   padding: 8px 12px;
-  background: #161628;
-  border: 1px solid #1e1e3a;
+  background: #122218;
+  border: 1px solid #1a3325;
   border-radius: 6px;
   color: #e2e8f0;
   font-size: 12px;
@@ -414,7 +414,7 @@ input[type="number"]:focus {
   transition: border-color 0.15s;
 }
 
-.select:focus { border-color: #3b82f6; }
+.select:focus { border-color: #2d6b4a; }
 
 .row-compact {
   align-items: center;
@@ -444,7 +444,7 @@ code {
 }
 
 .hint a {
-  color: #3b82f6;
+  color: #b8a44c;
   text-decoration: none;
 }
 
@@ -453,7 +453,7 @@ code {
 /* Insights button */
 .section-insights { padding: 8px 16px 16px; }
 .btn-insights {
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  background: linear-gradient(135deg, #245a3d, #3a8c5c);
   color: #fff;
   font-weight: 600;
   border: none;

@@ -187,7 +187,7 @@
   }
 
   function heatColor(botPct, intensity) {
-    if (intensity === 0) return '#161b22';
+    if (intensity === 0) return '#12261a';
     const hue = 130 - (botPct / 100) * 130;
     const sat = 55 + intensity * 7;
     const light = 12 + intensity * 9;
@@ -283,7 +283,7 @@
       `</div>` +
       `<div class="heatmap-legend">` +
         `<span>Less</span>` +
-        `<span class="heatmap-legend-cell" style="background:#161b22"></span>` +
+        `<span class="heatmap-legend-cell" style="background:#12261a"></span>` +
         `<span class="heatmap-legend-cell" style="background:${heatColor(0, 1)}"></span>` +
         `<span class="heatmap-legend-cell" style="background:${heatColor(0, 3)}"></span>` +
         `<span class="heatmap-legend-cell" style="background:${heatColor(50, 2)}"></span>` +

@@ -203,7 +203,7 @@
           <span class="redbot-card-pct">\u{23F3}</span>
         </div>
         <div class="redbot-card-body">
-          <div class="redbot-card-label" style="color:#3b82f6">Rate Limited</div>
+          <div class="redbot-card-label" style="color:#2d6b4a">Rate Limited</div>
           <p style="font-size:12px;color:#94a3b8;line-height:1.5;margin-top:8px">
             Reddit is limiting requests. Please wait before trying again.
           </p>
