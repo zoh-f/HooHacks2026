@@ -238,7 +238,7 @@
   // ---- Comment actions (minimize / hide) ----
 
   function applyCommentAction(el, result) {
-    if (botAction === 'badge' || botAction === 'off') return;
+    if (botAction !== 'minimize') return;
     if (result.score < 0 || result.score < botThreshold) return;
 
     const comment =
@@ -247,35 +247,20 @@
       el.closest('.Comment') ||
       el.closest('[data-testid="comment"]');
     if (!comment || comment.hasAttribute('data-redbot-action')) return;
-    comment.setAttribute('data-redbot-action', botAction);
+    comment.setAttribute('data-redbot-action', 'minimize');
 
-    if (botAction === 'hide') {
-      const placeholder = document.createElement('div');
-      placeholder.className = 'redbot-hidden-placeholder';
-      placeholder.innerHTML =
-        `<span>Comment hidden by RedBot (${result.score}% bot likelihood)</span>` +
-        `<button class="redbot-reveal-btn">Show</button>`;
-      placeholder.querySelector('.redbot-reveal-btn').addEventListener('click', () => {
-        comment.style.display = '';
-        placeholder.remove();
-        comment.removeAttribute('data-redbot-action');
-      });
-      comment.before(placeholder);
-      comment.style.display = 'none';
-    } else if (botAction === 'minimize') {
-      const notice = document.createElement('div');
-      notice.className = 'redbot-minimize-notice';
-      notice.innerHTML =
-        `<span>Minimized by RedBot (${result.score}% bot likelihood)</span>` +
-        `<button class="redbot-expand-btn">Expand</button>`;
-      notice.querySelector('.redbot-expand-btn').addEventListener('click', () => {
-        comment.classList.remove('redbot-comment-minimized');
-        notice.remove();
-        comment.removeAttribute('data-redbot-action');
-      });
-      comment.before(notice);
-      comment.classList.add('redbot-comment-minimized');
-    }
+    const bar = document.createElement('div');
+    bar.className = 'redbot-minimize-bar';
+    bar.innerHTML =
+      `<span>\u{1F916} ${result.score}% bot — u/${result.meta?.username || '?'}</span>` +
+      `<button class="redbot-expand-btn">Show</button>`;
+    bar.querySelector('.redbot-expand-btn').addEventListener('click', () => {
+      comment.style.display = '';
+      bar.remove();
+      comment.removeAttribute('data-redbot-action');
+    });
+    comment.before(bar);
+    comment.style.display = 'none';
   }
 
   // ---- Scan queue ----

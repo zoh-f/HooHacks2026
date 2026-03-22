@@ -306,10 +306,14 @@ function runTier2(commentsPayload, tier1) {
 
   if (comments.length === 0) return { ...tier1, tier: 2 };
 
+  comments.sort((a, b) => a.created_utc - b.created_utc);
+  const times = comments.map(c => c.created_utc);
+  const bodies = comments.map(c => (c.body || '').toLowerCase());
+
   let t2 = 0;
   const signals = [...tier1.signals];
 
-  // Generic / low-effort comments (20 pts)
+  // Generic / low-effort comments (15 pts)
   let genericCount = 0;
   for (const c of comments) {
     const body = (c.body || '').toLowerCase().trim().replace(/[!?.]+$/, '');
@@ -317,67 +321,138 @@ function runTier2(commentsPayload, tier1) {
   }
   const genericRatio = genericCount / comments.length;
   if (genericRatio > 0.5) {
-    t2 += 20;
-    signals.push({ name: 'Mostly generic comments', detail: `${genericCount}/${comments.length}`, pts: 20 });
+    t2 += 15;
+    signals.push({ name: 'Mostly generic comments', detail: `${genericCount}/${comments.length}`, pts: 15 });
   } else if (genericRatio > 0.3) {
-    t2 += 12;
-    signals.push({ name: 'Many generic comments', detail: `${genericCount}/${comments.length}`, pts: 12 });
+    t2 += 8;
+    signals.push({ name: 'Many generic comments', detail: `${genericCount}/${comments.length}`, pts: 8 });
   }
 
-  // Comment-to-comment similarity (25 pts)
-  const bodies = comments.map(c => (c.body || '').toLowerCase());
-  let simSum = 0, pairs = 0;
-  for (let i = 0; i < bodies.length; i++) {
-    for (let j = i + 1; j < bodies.length; j++) {
-      simSum += jaccardSimilarity(bodies[i], bodies[j]);
-      pairs++;
+  // Post-to-post similarity — consecutive (15 pts)
+  if (bodies.length > 1) {
+    let consecSum = 0;
+    for (let i = 0; i < bodies.length - 1; i++) {
+      consecSum += jaccardSimilarity(bodies[i], bodies[i + 1]);
+    }
+    const avgConsec = consecSum / (bodies.length - 1);
+    if (avgConsec > 0.6) {
+      t2 += 15;
+      signals.push({ name: 'Very repetitive (consecutive)', detail: `${Math.floor(avgConsec * 100)}% avg`, pts: 15 });
+    } else if (avgConsec > 0.35) {
+      t2 += 8;
+      signals.push({ name: 'Repetitive (consecutive)', detail: `${Math.floor(avgConsec * 100)}% avg`, pts: 8 });
     }
   }
-  const avgSim = pairs > 0 ? simSum / pairs : 0;
-  if (avgSim > 0.5) {
-    t2 += 25;
-    signals.push({ name: 'Very repetitive comments', detail: `${Math.floor(avgSim * 100)}% similar`, pts: 25 });
-  } else if (avgSim > 0.3) {
-    t2 += 15;
-    signals.push({ name: 'Somewhat repetitive', detail: `${Math.floor(avgSim * 100)}% similar`, pts: 15 });
-  }
 
-  // Subreddit diversity (20 pts)
+  // Subreddit diversity (12 pts)
   const subs = new Set(comments.map(c => c.subreddit));
   const divRatio = subs.size / comments.length;
-  if (divRatio < 0.2) {
-    t2 += 20;
-    signals.push({ name: 'Very low sub diversity', detail: `${subs.size} subs / ${comments.length} comments`, pts: 20 });
-  } else if (divRatio < 0.4) {
+  if (divRatio < 0.15) {
     t2 += 12;
-    signals.push({ name: 'Low sub diversity', detail: `${subs.size} subs / ${comments.length} comments`, pts: 12 });
+    signals.push({ name: 'Very low sub diversity', detail: `${subs.size} subs / ${comments.length} comments`, pts: 12 });
+  } else if (divRatio < 0.35) {
+    t2 += 6;
+    signals.push({ name: 'Low sub diversity', detail: `${subs.size} subs / ${comments.length} comments`, pts: 6 });
   }
 
-  // Posting frequency (20 pts)
-  const times = comments.map(c => c.created_utc).sort((a, b) => a - b);
-  let rapid = 0;
-  for (let i = 1; i < times.length; i++) {
-    if ((times[i] - times[i - 1]) < 120) rapid++;
-  }
-  if (rapid > times.length * 0.5) {
-    t2 += 20;
-    signals.push({ name: 'Inhuman post speed', detail: `${rapid} gaps < 2min`, pts: 20 });
-  } else if (rapid > times.length * 0.3) {
-    t2 += 10;
-    signals.push({ name: 'Rapid posting', detail: `${rapid} gaps < 2min`, pts: 10 });
-  }
-
-  // Comment length variance (15 pts)
+  // Comment length variance (8 pts)
   const lens = comments.map(c => (c.body || '').length);
-  const avg = lens.reduce((a, b) => a + b, 0) / lens.length;
-  const stddev = Math.sqrt(lens.reduce((s, l) => s + (l - avg) ** 2, 0) / lens.length);
-  const cv = avg > 0 ? stddev / avg : 0;
+  const avgLen = lens.reduce((a, b) => a + b, 0) / lens.length;
+  const stddev = Math.sqrt(lens.reduce((s, l) => s + (l - avgLen) ** 2, 0) / lens.length);
+  const cv = avgLen > 0 ? stddev / avgLen : 0;
   if (cv < 0.2) {
-    t2 += 15;
-    signals.push({ name: 'Uniform comment lengths', detail: `CV ${cv.toFixed(2)}`, pts: 15 });
-  } else if (cv < 0.4) {
     t2 += 8;
-    signals.push({ name: 'Low length variance', detail: `CV ${cv.toFixed(2)}`, pts: 8 });
+    signals.push({ name: 'Uniform comment lengths', detail: `CV ${cv.toFixed(2)}`, pts: 8 });
+  } else if (cv < 0.35) {
+    t2 += 4;
+    signals.push({ name: 'Low length variance', detail: `CV ${cv.toFixed(2)}`, pts: 4 });
+  }
+
+  // Median interval between posts (12 pts)
+  if (times.length > 1) {
+    const intervals = [];
+    for (let i = 1; i < times.length; i++) intervals.push(times[i] - times[i - 1]);
+    intervals.sort((a, b) => a - b);
+    const median = intervals[Math.floor(intervals.length / 2)];
+    if (median < 60) {
+      t2 += 12;
+      signals.push({ name: 'Median interval < 1min', detail: `${median}s`, pts: 12 });
+    } else if (median < 180) {
+      t2 += 6;
+      signals.push({ name: 'Median interval < 3min', detail: `${median}s`, pts: 6 });
+    }
+  }
+
+  // Active hours / day (10 pts)
+  const activeHours = new Set(comments.map(c => new Date(c.created_utc * 1000).getUTCHours()));
+  if (activeHours.size >= 20) {
+    t2 += 10;
+    signals.push({ name: 'Active nearly 24h', detail: `${activeHours.size}/24 hrs`, pts: 10 });
+  } else if (activeHours.size >= 16) {
+    t2 += 5;
+    signals.push({ name: 'Unusually wide active hours', detail: `${activeHours.size}/24 hrs`, pts: 5 });
+  }
+
+  // Burstiness — max comments in any 5-min window (12 pts)
+  let maxBurst = 0;
+  for (let i = 0; i < times.length; i++) {
+    let count = 1;
+    for (let j = i + 1; j < times.length && times[j] - times[i] <= 300; j++) count++;
+    if (count > maxBurst) maxBurst = count;
+  }
+  if (maxBurst >= 8) {
+    t2 += 12;
+    signals.push({ name: 'Extreme burst (5min)', detail: `${maxBurst} comments`, pts: 12 });
+  } else if (maxBurst >= 5) {
+    t2 += 6;
+    signals.push({ name: 'Comment burst (5min)', detail: `${maxBurst} comments`, pts: 6 });
+  }
+
+  // Links % in comments (10 pts)
+  const linkRe = /https?:\/\/\S+/;
+  const linkCount = comments.filter(c => linkRe.test(c.body || '')).length;
+  const linkRatio = linkCount / comments.length;
+  if (linkRatio > 0.7) {
+    t2 += 10;
+    signals.push({ name: 'Most comments have links', detail: `${Math.floor(linkRatio * 100)}%`, pts: 10 });
+  } else if (linkRatio > 0.4) {
+    t2 += 5;
+    signals.push({ name: 'Many comments have links', detail: `${Math.floor(linkRatio * 100)}%`, pts: 5 });
+  }
+
+  // Max unique subs in any 24h window (10 pts)
+  let maxSubsIn24h = 0;
+  for (let i = 0; i < comments.length; i++) {
+    const windowSubs = new Set();
+    for (let j = i; j < comments.length && comments[j].created_utc - comments[i].created_utc <= 86400; j++) {
+      windowSubs.add(comments[j].subreddit);
+    }
+    if (windowSubs.size > maxSubsIn24h) maxSubsIn24h = windowSubs.size;
+  }
+  if (maxSubsIn24h >= 15) {
+    t2 += 10;
+    signals.push({ name: 'Extreme sub spread (24h)', detail: `${maxSubsIn24h} subs`, pts: 10 });
+  } else if (maxSubsIn24h >= 10) {
+    t2 += 5;
+    signals.push({ name: 'High sub spread (24h)', detail: `${maxSubsIn24h} subs`, pts: 5 });
+  }
+
+  // Hour entropy — uniform posting across hours is bot-like (10 pts)
+  const hourBins = new Array(24).fill(0);
+  comments.forEach(c => hourBins[new Date(c.created_utc * 1000).getUTCHours()]++);
+  let entropy = 0;
+  for (const n of hourBins) {
+    if (n > 0) {
+      const p = n / comments.length;
+      entropy -= p * Math.log2(p);
+    }
+  }
+  if (entropy > 4.0) {
+    t2 += 10;
+    signals.push({ name: 'Very uniform hour spread', detail: `H=${entropy.toFixed(2)}`, pts: 10 });
+  } else if (entropy > 3.5) {
+    t2 += 5;
+    signals.push({ name: 'Uniform hour spread', detail: `H=${entropy.toFixed(2)}`, pts: 5 });
   }
 
   const blended = Math.min(100, Math.round(tier1.score * 0.4 + t2 * 0.6));
