@@ -935,14 +935,16 @@ async function persistToInsights(username, result, subreddit, commentTs) {
 
   db.totalScans++;
 
-  db.timeline.push({
-    ts: commentTs || Date.now(),
-    sub,
-    user: username,
-    score: result.score,
-  });
-  if (db.timeline.length > TIMELINE_CAP) {
-    db.timeline = db.timeline.slice(-TIMELINE_CAP);
+  if (commentTs) {
+    db.timeline.push({
+      ts: commentTs,
+      sub,
+      user: username,
+      score: result.score,
+    });
+    if (db.timeline.length > TIMELINE_CAP) {
+      db.timeline = db.timeline.slice(-TIMELINE_CAP);
+    }
   }
 
   await chrome.storage.local.set({ insightsDb: db });

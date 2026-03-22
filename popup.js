@@ -1,3 +1,5 @@
+let activeFilter = null; // null | 'bot' | 'suspicious' | 'human'
+
 document.addEventListener('DOMContentLoaded', () => {
   loadResults();
   loadApiKey();
@@ -10,7 +12,22 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btnLogin').addEventListener('click', handleRedditLogin);
   document.getElementById('botAction').addEventListener('change', saveBotSettings);
   document.getElementById('botThreshold').addEventListener('change', saveBotSettings);
+
+  document.getElementById('totalScanned').addEventListener('click', () => setFilter(null));
+  document.getElementById('totalBots').addEventListener('click', () => setFilter('bot'));
+  document.getElementById('totalSus').addEventListener('click', () => setFilter('suspicious'));
+  document.getElementById('totalHuman').addEventListener('click', () => setFilter('human'));
 });
+
+function setFilter(cat) {
+  activeFilter = activeFilter === cat ? null : cat;
+  document.querySelectorAll('.summary .stat').forEach(el => el.classList.remove('filter-active'));
+  if (activeFilter) {
+    const map = { bot: 'totalBots', suspicious: 'totalSus', human: 'totalHuman' };
+    document.getElementById(map[activeFilter])?.classList.add('filter-active');
+  }
+  loadResults();
+}
 
 // ---- Load and display scan results for the active tab ----
 
@@ -60,24 +77,20 @@ async function loadResults() {
     if (!tabs[0]) return;
 
     const tab = tabs[0];
-    const currentPageKey = tab.url; 
+    const currentPageKey = tab.url;
 
     if (lastPageKey !== null && lastPageKey !== currentPageKey) {
-      console.log("Page changed → resetting counters");
-
       resetAllCounters();
-      isScanning = false;   // stop loader state
+      isScanning = false;
       hideLoader();
     }
 
     lastPageKey = currentPageKey;
 
-
     chrome.runtime.sendMessage({ type: 'getTabResults' }, res => {
       if (chrome.runtime.lastError) return;
 
-      const list = document.getElementById('userList');
-      const results =
+      const bgResults =
         res && typeof res === 'object' && res !== null && 'results' in res
           ? res.results
           : res;
@@ -86,99 +99,113 @@ async function loadResults() {
           ? res.pending
           : 0;
 
-      const entries = Object.entries(results || {});
-
+      const bgEntries = Object.entries(bgResults || {});
       const threadOpen = isRedditThread(currentPageKey);
-      const scanInProgress = pending > 0 || isScanning;
-      const hasUsers = entries.length > 0;
 
-      // show loader ONLY if scanning and nothing displayed yet
-      if (threadOpen && scanInProgress && !hasUsers) {
-        showLoader();
+      if (bgEntries.length > 0 || !threadOpen) {
+        renderResults(bgResults || {}, pending, threadOpen);
       } else {
-        hideLoader();
+        chrome.tabs.sendMessage(tab.id, { type: 'getContentResults' }, csResults => {
+          if (chrome.runtime.lastError || !csResults) {
+            renderResults({}, pending, threadOpen);
+            return;
+          }
+          renderResults(csResults, pending, threadOpen);
+        });
       }
+    });
+  });
+}
 
-      // ---- empty state ----
-      if (entries.length === 0) {
-        if (!threadOpen) hideLoader();
-        list.innerHTML =
-          threadOpen && scanInProgress
-            ? ''
-            : '<p class="empty">Open a Reddit thread to start scanning.</p>';
+function renderResults(results, pending, threadOpen) {
+  const list = document.getElementById('userList');
+  const entries = Object.entries(results || {});
+  const scanInProgress = pending > 0 || isScanning;
+  const hasUsers = entries.length > 0;
 
-        setSummary(0, 0, 0, 0);
-        return;
-      }
+  if (threadOpen && scanInProgress && !hasUsers) {
+    showLoader();
+  } else {
+    hideLoader();
+  }
 
-      // ---- normal rendering ----
-      entries.sort((a, b) => (b[1].score ?? -1) - (a[1].score ?? -1));
+  if (entries.length === 0) {
+    if (!threadOpen) hideLoader();
+    list.innerHTML =
+      threadOpen && scanInProgress
+        ? ''
+        : '<p class="empty">Open a Reddit thread to start scanning.</p>';
+    setSummary(0, 0, 0, 0);
+    return;
+  }
 
-      let bots = 0, sus = 0, humans = 0;
-      list.innerHTML = '';
+  entries.sort((a, b) => (b[1].score ?? -1) - (a[1].score ?? -1));
 
-      let rateLimited = 0;
+  let bots = 0, sus = 0, humans = 0;
+  list.innerHTML = '';
+  let rateLimited = 0;
 
-      for (const [username, r] of entries) {
-        let cat, display;
+  for (const [username, r] of entries) {
+    let cat, display;
 
-        if (r.errorType === 'ratelimited') {
-          cat = 'ratelimited';
-          rateLimited++;
-          display = '\u{23F3} Rate Limited';
-        } else if (r.score < 0 && r.errorType) {
-          cat = 'known';
-          bots++;
-          const labels = {
-            suspended: '\u{1F6A8} Suspended',
-            banned: '\u{1F528} Banned',
-            deleted: '\u{1F6AB} Deleted'
-          };
-          display = labels[r.errorType] || '? Error';
-        } else if (r.score < 0) {
-          continue;
-        } else if (r.knownBot || r.score >= 40) {
-          cat = 'bot'; bots++;
-          display = `${r.score}%`;
-        } else if (r.score >= 20) {
-          cat = 'suspicious'; sus++;
-          display = `${r.score}%`;
-        } else {
-          cat = 'human'; humans++;
-          display = `${r.score}%`;
-        }
+    if (r.errorType === 'ratelimited') {
+      cat = 'ratelimited';
+      rateLimited++;
+      display = '\u{23F3} Rate Limited';
+    } else if (r.score < 0 && r.errorType) {
+      cat = 'known';
+      bots++;
+      const labels = {
+        suspended: '\u{1F6A8} Suspended',
+        banned: '\u{1F528} Banned',
+        deleted: '\u{1F6AB} Deleted'
+      };
+      display = labels[r.errorType] || '? Error';
+    } else if (r.score < 0) {
+      continue;
+    } else if (r.knownBot || r.score >= 40) {
+      cat = 'bot'; bots++;
+      display = `${r.score}%`;
+    } else if (r.score >= 20) {
+      cat = 'suspicious'; sus++;
+      display = `${r.score}%`;
+    } else {
+      cat = 'human'; humans++;
+      display = `${r.score}%`;
+    }
 
-        const row = document.createElement('div');
-        row.className = 'uitem';
-        row.innerHTML = `
-          <div class="uinfo">
-            <div class="udot ${cat}"></div>
-            <a class="uname uname-link"
-               href="https://www.reddit.com/user/${username}"
-               target="_blank">u/${username}</a>
-          </div>
-          <div>
-            <span class="uscore ${cat}">${display}</span>
-            ${r.errorType !== 'ratelimited'
-              ? `<span class="utier">T${r.tier}</span>`
-              : ''}
-          </div>`;
+    const row = document.createElement('div');
+    row.className = 'uitem';
+    if (activeFilter && cat !== activeFilter && cat !== 'known') {
+      row.style.display = 'none';
+    }
+    row.innerHTML = `
+      <div class="uinfo">
+        <div class="udot ${cat}"></div>
+        <a class="uname uname-link"
+           href="https://www.reddit.com/user/${username}"
+           target="_blank">u/${username}</a>
+      </div>
+      <div>
+        <span class="uscore ${cat}">${display}</span>
+        ${r.errorType !== 'ratelimited'
+          ? `<span class="utier">T${r.tier}</span>`
+          : ''}
+      </div>`;
 
-        list.appendChild(row);
-      }
+    list.appendChild(row);
+  }
 
-      if (rateLimited > 0) {
-        const notice = document.createElement('div');
-        notice.className = 'rate-limit-notice';
-        notice.textContent =
-          `Reddit is rate limiting requests. ${rateLimited} user(s) could not be scanned — try again in a minute.`;
-        list.prepend(notice);
-      }
+  if (rateLimited > 0) {
+    const notice = document.createElement('div');
+    notice.className = 'rate-limit-notice';
+    notice.textContent =
+      `Reddit is rate limiting requests. ${rateLimited} user(s) could not be scanned — try again in a minute.`;
+    list.prepend(notice);
+  }
 
-      if (entries.length > 0) isScanning = false;
-      setSummary(entries.length, bots, sus, humans);
-    }); // ← sendMessage close
-  });   // ← tabs.query close
+  if (entries.length > 0) isScanning = false;
+  setSummary(entries.length, bots, sus, humans);
 }
 
 // ---- Counter animation helpers ----

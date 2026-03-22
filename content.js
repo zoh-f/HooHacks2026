@@ -693,13 +693,19 @@
 
   // ---- Listen for manual scan from popup ----
 
-  chrome.runtime.onMessage.addListener((msg) => {
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg.type === 'triggerScan') {
       resultCache.clear();
       pendingElements.clear();
       document.querySelectorAll(`[${ATTR}]`).forEach(el => el.removeAttribute(ATTR));
       document.querySelectorAll('.redbot-badge, .redbot-card').forEach(el => el.remove());
       scanPage();
+    }
+    if (msg.type === 'getContentResults') {
+      const out = {};
+      resultCache.forEach((v, k) => { out[k] = v; });
+      sendResponse(out);
+      return true;
     }
   });
 

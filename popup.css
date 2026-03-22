@@ -119,7 +119,22 @@ body {
   align-items: center;
   padding: 12px 4px;
   background: #0c0c18;
+  cursor: pointer;
+  position: relative;
 }
+.stat.filter-active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 20%;
+  right: 20%;
+  height: 3px;
+  border-radius: 3px 3px 0 0;
+  background: currentColor;
+}
+#totalBots.filter-active::after { background: #ef4444; }
+#totalSus.filter-active::after  { background: #f59e0b; }
+#totalHuman.filter-active::after { background: #22c55e; }
 
 .stat-val {
   font-size: 22px;
