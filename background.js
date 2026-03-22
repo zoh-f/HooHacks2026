@@ -763,23 +763,41 @@ When evaluating AI-generated content, look for:
 Respond with ONLY valid JSON, no markdown fences:
 {"score": <0-100>, "reasoning": "<1-2 sentence explanation>", "aiContentScore": <0-100>, "aiContentNote": "<1 sentence about AI writing detection>"}`;
 
+  const requestBody = {
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: {
+      temperature: 0.2,
+      maxOutputTokens: 4096,
+      responseMimeType: 'application/json',
+    },
+  };
+
   try {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.2, maxOutputTokens: 512 },
-        }),
+    let text = '';
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody),
+        }
+      );
+
+      if (!res.ok) throw new Error(`Gemini ${res.status}`);
+
+      const json = await res.json();
+      const candidate = json.candidates?.[0];
+      text = candidate?.content?.parts?.[0]?.text || '';
+
+      if (candidate?.finishReason === 'MAX_TOKENS' && attempt === 0) {
+        console.warn('[RedBot] LLM response truncated, retrying with higher budget');
+        requestBody.generationConfig.maxOutputTokens = 8192;
+        continue;
       }
-    );
+      break;
+    }
 
-    if (!res.ok) throw new Error(`Gemini ${res.status}`);
-
-    const json = await res.json();
-    const text = json.candidates?.[0]?.content?.parts?.[0]?.text || '';
     const parsed = safeParseGeminiJSON(text);
 
     const llmScore = parsed.score;
