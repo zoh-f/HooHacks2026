@@ -72,7 +72,7 @@ async function loadResults() {
         </div>
         <div>
           <span class="uscore ${cat}">${display}</span>
-          ${r.errorType !== 'ratelimited' ? `<span class="utier">T${r.tier}</span>` : ''}
+          ${r.errorType !== 'ratelimited' ? `<span class="utier">${r.tier === 2 ? 'LLM' : 'H'}</span>` : ''}
         </div>`;
       list.appendChild(row);
     }

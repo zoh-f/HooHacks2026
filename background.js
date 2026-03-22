@@ -122,6 +122,8 @@ async function redditLogout() {
 
 const queue = [];
 let queueRunning = false;
+const MAX_BACKOFF = 60000;   // cap at 60s
+const MAX_RETRIES = 6;       // 2s → 4s → 8s → 16s → 32s → 60s then give up
 
 function enqueueFetch(url) {
   return new Promise((resolve, reject) => {
@@ -136,37 +138,63 @@ async function drainQueue() {
 
   const { url, resolve, reject } = queue.shift();
   let authenticated = false;
-  try {
-    const token = await getRedditToken();
-    let fetchUrl = url;
-    const headers = {};
+  let backoff = 2000;
 
-    if (token) {
-      authenticated = true;
-      fetchUrl = url.replace('https://www.reddit.com/', 'https://oauth.reddit.com/');
-      headers['Authorization'] = `Bearer ${token}`;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const token = await getRedditToken();
+      let fetchUrl = url;
+      const headers = {};
+
+      if (token) {
+        authenticated = true;
+        fetchUrl = url.replace('https://www.reddit.com/', 'https://oauth.reddit.com/');
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      if (attempt > 0) {
+        console.log(`[RedBot] Retry #${attempt} for: ${url} (waited ${backoff / 1000}s)`);
+      }
+
+      const res = await fetch(fetchUrl, { headers });
+      console.log(`[RedBot] Fetching: ${fetchUrl}${authenticated ? ' (auth)' : ''}`);
+
+      if (res.status === 429) {
+        if (attempt < MAX_RETRIES) {
+          console.warn(`[RedBot] Rate limited on ${url} — backing off ${backoff / 1000}s (attempt ${attempt + 1}/${MAX_RETRIES})`);
+          await new Promise(r => setTimeout(r, backoff));
+          backoff = Math.min(backoff * 2, MAX_BACKOFF);
+          continue;
+        }
+        throw new Error('ratelimited');
+      }
+
+      if (res.status === 404) throw new Error('not_found');
+      if (res.status === 403) throw new Error('suspended');
+      if (res.status === 451) throw new Error('banned');
+      if (!res.ok) throw new Error(`http_${res.status}`);
+
+      const data = await res.json();
+      console.log(`[RedBot] Fetched OK: ${fetchUrl}`);
+      resolve(data);
+      break;
+    } catch (err) {
+      if (err.message !== 'ratelimited' && attempt < MAX_RETRIES) {
+        console.warn(`[RedBot] Fetch error on ${url}: ${err.message} — not retryable, failing`);
+      }
+      if (attempt === MAX_RETRIES || err.message !== 'ratelimited') {
+        console.warn(`[RedBot] Fetch failed: ${url} — ${err.message}`);
+        reject(err);
+        break;
+      }
     }
-
-    const res = await fetch(fetchUrl, { headers });
-    console.log(`[RedBot] Fetching: ${fetchUrl}${authenticated ? ' (auth)' : ''}`);
-    if (res.status === 429) throw new Error('ratelimited');
-    if (res.status === 404) throw new Error('not_found');
-    if (res.status === 403) throw new Error('suspended');
-    if (res.status === 451) throw new Error('banned');
-    if (!res.ok) throw new Error(`http_${res.status}`);
-    const data = await res.json();
-    console.log(`[RedBot] Fetched OK: ${fetchUrl}`);
-    resolve(data);
-  } catch (err) {
-    console.warn(`[RedBot] Fetch failed: ${url} — ${err.message}`);
-    reject(err);
   }
 
-  // Authenticated: 60 req/min → 600ms; unauthenticated: ~10 req/min → 1100ms
+  const delay = authenticated ? 600 : 1100;
   setTimeout(() => {
     queueRunning = false;
     drainQueue();
-  }, authenticated ? 600 : 1100);
+  }, delay);
 }
 
 // ----- Reddit API helpers -----
@@ -181,104 +209,22 @@ function fetchUserComments(username, limit = 50) {
   );
 }
 
-// ----- Tier 1 — Heuristic filter (account metadata only) -----
+// ----- Known bots -----
 
 const SKIP_USERS = new Set([
   'automoderator', 'autotldr', 'remindmebot', 'sneakpeekbot',
   'gifendore', 'stabbot', 'repostsleuthbot', 'savevideo',
   'vredditdownloader', 'haikibot', 'tweetlinker',
+  'judgement_bot_aita', 'botdefense', 'b0teleprompter',
+  'totesmessenger', 'sub_doesnt_exist_bot', 'nice-scores',
+  'haikubot-1911', 'anti-teleportation-b', 'whynotcollegeboard',
+  'original-poster-bot', 'userleansbot', 'nwordcountbot',
+  'profanitycounter', 'commonmisspellingbot',
 ]);
 
-function runTier1(aboutData) {
-  const d = aboutData.data;
-  console.log(`[RedBot] Tier 1 — analyzing u/${d.name}`);
-  let score = 0;
-  const signals = [];
+// ----- Tier 1 — Combined heuristics (metadata + content) -----
 
-  const ageDays = (Date.now() - d.created_utc * 1000) / 86_400_000;
-
-  // Account age (15 pts)
-  if (ageDays < 30) {
-    score += 15;
-    signals.push({ name: 'Very new account', detail: `${Math.floor(ageDays)}d old`, pts: 15 });
-  } else if (ageDays < 90) {
-    score += 10;
-    signals.push({ name: 'New account', detail: `${Math.floor(ageDays)}d old`, pts: 10 });
-  } else if (ageDays < 180) {
-    score += 5;
-    signals.push({ name: 'Young account', detail: `${Math.floor(ageDays)}d old`, pts: 5 });
-  }
-
-  // Karma-to-age ratio (20 pts)
-  const totalKarma = (d.link_karma || 0) + (d.comment_karma || 0);
-  const kpd = totalKarma / Math.max(ageDays, 1);
-  if (kpd > 500) {
-    score += 20;
-    signals.push({ name: 'Extreme karma rate', detail: `${Math.floor(kpd)}/day`, pts: 20 });
-  } else if (kpd > 100) {
-    score += 12;
-    signals.push({ name: 'High karma rate', detail: `${Math.floor(kpd)}/day`, pts: 12 });
-  } else if (kpd > 50) {
-    score += 6;
-    signals.push({ name: 'Elevated karma rate', detail: `${Math.floor(kpd)}/day`, pts: 6 });
-  }
-
-  // Username pattern (15 pts)
-  const name = d.name;
-  const defaultName = /^[A-Z][a-z]+-[A-Z][a-z]+-\d{3,}$/;
-  const randomish = /^[a-z]{2,8}\d{3,}$/i;
-  const underscoreNum = /^[A-Za-z]+_[A-Za-z]+\d{2,}$/;
-  if (defaultName.test(name)) {
-    score += 15;
-    signals.push({ name: 'Default Reddit name', detail: name, pts: 15 });
-  } else if (randomish.test(name) || underscoreNum.test(name)) {
-    score += 10;
-    signals.push({ name: 'Random-looking name', detail: name, pts: 10 });
-  }
-
-  // Email not verified (10 pts)
-  if (!d.has_verified_email) {
-    score += 10;
-    signals.push({ name: 'Unverified email', detail: '', pts: 10 });
-  }
-
-  // Karma type imbalance (20 pts)
-  const lk = d.link_karma || 0;
-  const ck = d.comment_karma || 0;
-  const tk = lk + ck;
-  if (tk > 100) {
-    const ratio = Math.max(lk, ck) / tk;
-    if (ratio > 0.98) {
-      score += 20;
-      signals.push({ name: 'Extreme karma imbalance', detail: `${Math.floor(ratio * 100)}% one type`, pts: 20 });
-    } else if (ratio > 0.92) {
-      score += 12;
-      signals.push({ name: 'Karma imbalance', detail: `${Math.floor(ratio * 100)}% one type`, pts: 12 });
-    }
-  }
-
-  const finalT1 = Math.min(score, 100);
-  console.log(`[RedBot] Tier 1 — u/${d.name} score: ${finalT1}`, signals);
-
-  return {
-    score: finalT1,
-    signals,
-    tier: 1,
-    meta: {
-      username: d.name,
-      ageDays: Math.floor(ageDays),
-      totalKarma,
-      linkKarma: lk,
-      commentKarma: ck,
-      verified: !!d.has_verified_email,
-      icon: d.icon_img,
-    },
-  };
-}
-
-// ----- Tier 2 — Content analysis (sample comments) -----
-
-const GENERIC_PHRASES = [
+const GENERIC_PHRASES = new Set([
   'great point', 'this is so true', "couldn't agree more", 'well said',
   'take my upvote', 'this deserves more upvotes', 'underrated comment',
   'came here to say this', 'this is the way', 'you nailed it',
@@ -286,6 +232,27 @@ const GENERIC_PHRASES = [
   'amen to that', 'preach', 'facts', 'say it louder',
   'this right here', 'big if true', 'based', 'same here',
   'i agree', 'agreed', 'lol', 'lmao', 'nice',
+]);
+
+// Phrases that LLMs tend to overuse — presence across multiple comments is a strong signal
+const AI_TELL_PHRASES = [
+  "it's worth noting", "it's important to note", "it's important to remember",
+  "that being said", "that said,", "having said that",
+  "i completely understand", "i understand your concern",
+  "great question", "excellent point", "fascinating",
+  "in terms of", "when it comes to", "in the context of",
+  "it's crucial", "it's essential", "it's vital",
+  "navigate", "leverage", "utilize", "delve", "tapestry",
+  "comprehensive", "multifaceted", "nuanced",
+  "i'd be happy to", "absolutely!", "certainly!",
+  "here's the thing", "at the end of the day",
+  "from my perspective", "in my humble opinion",
+  "it depends on", "there are several factors",
+  "on the other hand", "however, it's",
+  "hope this helps", "feel free to",
+  "first and foremost", "last but not least",
+  "in conclusion", "to summarize",
+  "the key takeaway", "the bottom line",
 ];
 
 function jaccardSimilarity(a, b) {
@@ -297,178 +264,414 @@ function jaccardSimilarity(a, b) {
   return union > 0 ? inter / union : 0;
 }
 
-function runTier2(commentsPayload, tier1) {
+function trustMultiplier(ageDays, totalKarma) {
+  if (ageDays > 730 && totalKarma > 10000) return 0.4;
+  if (ageDays > 365 && totalKarma > 5000) return 0.6;
+  if (ageDays > 180 && totalKarma > 1000) return 0.8;
+  return 1.0;
+}
+
+function runHeuristics(aboutData, commentsPayload) {
+  const d = aboutData.data;
+  console.log(`[RedBot] Heuristics — analyzing u/${d.name}`);
+  let raw = 0;
+  const signals = [];
+
+  const ageDays = (Date.now() - d.created_utc * 1000) / 86_400_000;
+  const totalKarma = (d.link_karma || 0) + (d.comment_karma || 0);
+  const lk = d.link_karma || 0;
+  const ck = d.comment_karma || 0;
+
+  // ---- Account metadata signals ----
+
+  // Account age (max 12)
+  if (ageDays < 30) {
+    raw += 12;
+    signals.push({ name: 'Very new account', detail: `${Math.floor(ageDays)}d old`, pts: 12 });
+  } else if (ageDays < 90) {
+    raw += 8;
+    signals.push({ name: 'New account', detail: `${Math.floor(ageDays)}d old`, pts: 8 });
+  } else if (ageDays < 180) {
+    raw += 5;
+    signals.push({ name: 'Young account', detail: `${Math.floor(ageDays)}d old`, pts: 5 });
+  }
+
+  // Karma-to-age ratio (max 12)
+  const kpd = totalKarma / Math.max(ageDays, 1);
+  if (kpd > 500) {
+    raw += 12;
+    signals.push({ name: 'Extreme karma rate', detail: `${Math.floor(kpd)}/day`, pts: 12 });
+  } else if (kpd > 100) {
+    raw += 8;
+    signals.push({ name: 'High karma rate', detail: `${Math.floor(kpd)}/day`, pts: 8 });
+  } else if (kpd > 50) {
+    raw += 4;
+    signals.push({ name: 'Elevated karma rate', detail: `${Math.floor(kpd)}/day`, pts: 4 });
+  }
+
+  // Username pattern (max 10)
+  const name = d.name;
+  const defaultName = /^[A-Z][a-z]+-[A-Z][a-z]+-\d{3,}$/;
+  const randomish = /^[a-z]{2,8}\d{3,}$/i;
+  const underscoreNum = /^[A-Za-z]+_[A-Za-z]+\d{2,}$/;
+  if (defaultName.test(name)) {
+    raw += 10;
+    signals.push({ name: 'Default Reddit name', detail: name, pts: 10 });
+  } else if (randomish.test(name) || underscoreNum.test(name)) {
+    raw += 6;
+    signals.push({ name: 'Random-looking name', detail: name, pts: 6 });
+  }
+
+  // Default avatar (3)
+  const icon = d.icon_img || d.snoovatar_img || '';
+  if (!icon || icon.includes('default') || icon.includes('snoo_default')) {
+    raw += 3;
+    signals.push({ name: 'Default avatar', detail: 'No custom avatar', pts: 3 });
+  }
+
+  // No bio (3)
+  const bio = d.subreddit?.public_description || '';
+  if (!bio.trim()) {
+    raw += 3;
+    signals.push({ name: 'No bio', detail: 'Empty profile description', pts: 3 });
+  }
+
+  // Unverified email (3)
+  if (!d.has_verified_email) {
+    raw += 3;
+    signals.push({ name: 'Unverified email', detail: '', pts: 3 });
+  }
+
+  // Karma type imbalance (max 8)
+  const tk = lk + ck;
+  if (tk > 100) {
+    const ratio = Math.max(lk, ck) / tk;
+    if (ratio > 0.98) {
+      raw += 8;
+      signals.push({ name: 'Extreme karma imbalance', detail: `${Math.floor(ratio * 100)}% one type`, pts: 8 });
+    } else if (ratio > 0.92) {
+      raw += 5;
+      signals.push({ name: 'Karma imbalance', detail: `${Math.floor(ratio * 100)}% one type`, pts: 5 });
+    }
+  }
+
+  // Username pattern: FirstnameLastname with no separators (max 4)
+  const camelName = /^[A-Z][a-z]{2,10}[A-Z][a-z]{2,10}$/;
+  if (camelName.test(name)) {
+    raw += 4;
+    signals.push({ name: 'FirstNameLastName pattern', detail: name, pts: 4 });
+  }
+
+  // Username contains "bot" — strong self-identification signal (max 15)
+  const lowerName = name.toLowerCase();
+  if (/bot($|[_\-\d])/.test(lowerName) || lowerName.startsWith('bot_') || lowerName.startsWith('bot-')) {
+    raw += 15;
+    signals.push({ name: '"Bot" in username', detail: name, pts: 15 });
+  }
+
+  // ---- Content analysis signals ----
+
   const comments = commentsPayload.data.children
     .filter(c => c.kind === 't1')
     .map(c => c.data);
 
-  console.log(`[RedBot] Tier 2 — u/${tier1.meta.username}, ${comments.length} comments sampled`);
+  console.log(`[RedBot] Heuristics — u/${d.name}, ${comments.length} comments sampled`);
 
-  if (comments.length === 0) return { ...tier1, tier: 2 };
+  const flaggedComments = [];
 
-  comments.sort((a, b) => a.created_utc - b.created_utc);
-  const times = comments.map(c => c.created_utc);
-  const bodies = comments.map(c => (c.body || '').toLowerCase());
+  if (comments.length > 0) {
+    comments.sort((a, b) => a.created_utc - b.created_utc);
+    const times = comments.map(c => c.created_utc);
+    const bodies = comments.map(c => (c.body || '').toLowerCase());
 
-  let t2 = 0;
-  const signals = [...tier1.signals];
-
-  // Generic / low-effort comments (15 pts)
-  let genericCount = 0;
-  for (const c of comments) {
-    const body = (c.body || '').toLowerCase().trim().replace(/[!?.]+$/, '');
-    if (body.length < 15 || GENERIC_PHRASES.includes(body)) genericCount++;
-  }
-  const genericRatio = genericCount / comments.length;
-  if (genericRatio > 0.5) {
-    t2 += 15;
-    signals.push({ name: 'Mostly generic comments', detail: `${genericCount}/${comments.length}`, pts: 15 });
-  } else if (genericRatio > 0.3) {
-    t2 += 8;
-    signals.push({ name: 'Many generic comments', detail: `${genericCount}/${comments.length}`, pts: 8 });
-  }
-
-  // Post-to-post similarity — consecutive (15 pts)
-  if (bodies.length > 1) {
-    let consecSum = 0;
-    for (let i = 0; i < bodies.length - 1; i++) {
-      consecSum += jaccardSimilarity(bodies[i], bodies[i + 1]);
+    // Self-identifies as bot — "I am a bot" footer (instant 50 pts)
+    const botFooterRe = /i am a bot|this action was performed automatically|please contact the moderators.*if you have.*questions/i;
+    let botFooterCount = 0;
+    for (const c of comments) {
+      if (botFooterRe.test(c.body || '')) botFooterCount++;
     }
-    const avgConsec = consecSum / (bodies.length - 1);
-    if (avgConsec > 0.6) {
-      t2 += 15;
-      signals.push({ name: 'Very repetitive (consecutive)', detail: `${Math.floor(avgConsec * 100)}% avg`, pts: 15 });
-    } else if (avgConsec > 0.35) {
-      t2 += 8;
-      signals.push({ name: 'Repetitive (consecutive)', detail: `${Math.floor(avgConsec * 100)}% avg`, pts: 8 });
+    if (botFooterCount > 0) {
+      const ratio = botFooterCount / comments.length;
+      if (ratio > 0.3) {
+        raw += 50;
+        signals.push({ name: 'Self-identifies as bot', detail: `${botFooterCount}/${comments.length} have bot footer`, pts: 50 });
+      } else {
+        raw += 25;
+        signals.push({ name: 'Bot footer detected', detail: `${botFooterCount}/${comments.length} have bot footer`, pts: 25 });
+      }
+    }
+
+    // Generic / low-effort comments (max 10)
+    let genericCount = 0;
+    for (const c of comments) {
+      const body = (c.body || '').toLowerCase().trim().replace(/[!?.]+$/, '');
+      const isGeneric = body.length < 15 || GENERIC_PHRASES.has(body);
+      if (isGeneric) {
+        genericCount++;
+        flaggedComments.push({ body: c.body, sub: c.subreddit, reason: 'generic' });
+      }
+    }
+    const genericRatio = genericCount / comments.length;
+    if (genericRatio > 0.5) {
+      raw += 10;
+      signals.push({ name: 'Mostly generic comments', detail: `${genericCount}/${comments.length}`, pts: 10 });
+    } else if (genericRatio > 0.3) {
+      raw += 5;
+      signals.push({ name: 'Many generic comments', detail: `${genericCount}/${comments.length}`, pts: 5 });
+    }
+
+    // Consecutive comment similarity (max 10)
+    if (bodies.length > 1) {
+      let consecSum = 0;
+      let maxSim = 0;
+      let maxSimIdx = -1;
+      for (let i = 0; i < bodies.length - 1; i++) {
+        const sim = jaccardSimilarity(bodies[i], bodies[i + 1]);
+        consecSum += sim;
+        if (sim > maxSim) { maxSim = sim; maxSimIdx = i; }
+      }
+      const avgConsec = consecSum / (bodies.length - 1);
+      if (avgConsec > 0.6) {
+        raw += 10;
+        signals.push({ name: 'Very repetitive (consecutive)', detail: `${Math.floor(avgConsec * 100)}% avg`, pts: 10 });
+      } else if (avgConsec > 0.35) {
+        raw += 5;
+        signals.push({ name: 'Repetitive (consecutive)', detail: `${Math.floor(avgConsec * 100)}% avg`, pts: 5 });
+      }
+      if (maxSim > 0.5 && maxSimIdx >= 0) {
+        flaggedComments.push({ body: comments[maxSimIdx].body, sub: comments[maxSimIdx].subreddit, reason: 'similar' });
+        flaggedComments.push({ body: comments[maxSimIdx + 1].body, sub: comments[maxSimIdx + 1].subreddit, reason: 'similar' });
+      }
+    }
+
+    // Subreddit diversity (max 8, single signal)
+    const subs = new Set(comments.map(c => c.subreddit));
+    const divRatio = subs.size / comments.length;
+    if (divRatio < 0.15) {
+      raw += 8;
+      signals.push({ name: 'Very low sub diversity', detail: `${subs.size} subs / ${comments.length} comments`, pts: 8 });
+    } else if (divRatio < 0.35) {
+      raw += 4;
+      signals.push({ name: 'Low sub diversity', detail: `${subs.size} subs / ${comments.length} comments`, pts: 4 });
+    }
+
+    // Comment length variance (max 6)
+    const lens = comments.map(c => (c.body || '').length);
+    const avgLen = lens.reduce((a, b) => a + b, 0) / lens.length;
+    const stddev = Math.sqrt(lens.reduce((s, l) => s + (l - avgLen) ** 2, 0) / lens.length);
+    const cv = avgLen > 0 ? stddev / avgLen : 0;
+    if (cv < 0.2) {
+      raw += 6;
+      signals.push({ name: 'Uniform comment lengths', detail: `CV ${cv.toFixed(2)}`, pts: 6 });
+    } else if (cv < 0.35) {
+      raw += 3;
+      signals.push({ name: 'Low length variance', detail: `CV ${cv.toFixed(2)}`, pts: 3 });
+    }
+
+    // Median posting interval (max 8)
+    if (times.length > 1) {
+      const intervals = [];
+      for (let i = 1; i < times.length; i++) intervals.push(times[i] - times[i - 1]);
+      intervals.sort((a, b) => a - b);
+      const median = intervals[Math.floor(intervals.length / 2)];
+      if (median < 60) {
+        raw += 8;
+        signals.push({ name: 'Median interval < 1min', detail: `${median}s`, pts: 8 });
+      } else if (median < 180) {
+        raw += 4;
+        signals.push({ name: 'Median interval < 3min', detail: `${median}s`, pts: 4 });
+      }
+    }
+
+    // Burstiness — max comments in any 5-min window (max 8, replaces active hours + entropy)
+    let maxBurst = 0;
+    for (let i = 0; i < times.length; i++) {
+      let count = 1;
+      for (let j = i + 1; j < times.length && times[j] - times[i] <= 300; j++) count++;
+      if (count > maxBurst) maxBurst = count;
+    }
+    if (maxBurst >= 8) {
+      raw += 8;
+      signals.push({ name: 'Extreme burst (5min)', detail: `${maxBurst} comments`, pts: 8 });
+    } else if (maxBurst >= 5) {
+      raw += 4;
+      signals.push({ name: 'Comment burst (5min)', detail: `${maxBurst} comments`, pts: 4 });
+    }
+
+    // Link ratio (max 6)
+    const linkRe = /https?:\/\/\S+/;
+    const linkCount = comments.filter(c => linkRe.test(c.body || '')).length;
+    const linkRatio = linkCount / comments.length;
+    if (linkRatio > 0.7) {
+      raw += 6;
+      signals.push({ name: 'Most comments have links', detail: `${Math.floor(linkRatio * 100)}%`, pts: 6 });
+    } else if (linkRatio > 0.5) {
+      raw += 3;
+      signals.push({ name: 'Many comments have links', detail: `${Math.floor(linkRatio * 100)}%`, pts: 3 });
+    }
+
+    // AI-generated content detection (max 10)
+    let aiTellHits = 0;
+    const aiHitComments = [];
+    for (const c of comments) {
+      const lower = (c.body || '').toLowerCase();
+      let hitCount = 0;
+      for (const phrase of AI_TELL_PHRASES) {
+        if (lower.includes(phrase)) hitCount++;
+      }
+      if (hitCount >= 2) {
+        aiTellHits++;
+        aiHitComments.push({ body: c.body, sub: c.subreddit, reason: 'ai-style' });
+      }
+    }
+    const aiRatio = aiTellHits / comments.length;
+    if (aiRatio > 0.4) {
+      raw += 10;
+      signals.push({ name: 'Likely AI-written comments', detail: `${aiTellHits}/${comments.length} with AI tells`, pts: 10 });
+      aiHitComments.slice(0, 3).forEach(c => flaggedComments.push(c));
+    } else if (aiRatio > 0.2) {
+      raw += 5;
+      signals.push({ name: 'Possible AI-written comments', detail: `${aiTellHits}/${comments.length} with AI tells`, pts: 5 });
+      aiHitComments.slice(0, 2).forEach(c => flaggedComments.push(c));
+    }
+
+    // Dormancy gap — account sat idle before becoming active (max 6)
+    const oldestComment = comments[0].created_utc;
+    const dormancyDays = (oldestComment - d.created_utc) / 86400;
+    if (dormancyDays > 180) {
+      raw += 6;
+      signals.push({ name: 'Long dormancy before activity', detail: `${Math.floor(dormancyDays)}d idle`, pts: 6 });
+    } else if (dormancyDays > 30) {
+      raw += 3;
+      signals.push({ name: 'Dormancy gap', detail: `${Math.floor(dormancyDays)}d idle`, pts: 3 });
+    }
+
+    // AskReddit karma farming — bots disproportionately farm in AskReddit (max 6)
+    const askRedditCount = comments.filter(c =>
+      (c.subreddit || '').toLowerCase() === 'askreddit'
+    ).length;
+    const askRedditRatio = askRedditCount / comments.length;
+    if (askRedditRatio > 0.6) {
+      raw += 6;
+      signals.push({ name: 'Mostly AskReddit comments', detail: `${askRedditCount}/${comments.length}`, pts: 6 });
+    } else if (askRedditRatio > 0.4) {
+      raw += 3;
+      signals.push({ name: 'Heavy AskReddit activity', detail: `${askRedditCount}/${comments.length}`, pts: 3 });
+    }
+
+    // Hidden karma — has comment karma but few visible comments (max 6)
+    if (ck > 500 && comments.length < 5) {
+      raw += 6;
+      signals.push({ name: 'Hidden karma', detail: `${ck} karma, only ${comments.length} visible`, pts: 6 });
+    } else if (ck > 200 && comments.length < 3) {
+      raw += 4;
+      signals.push({ name: 'Karma with few comments', detail: `${ck} karma, only ${comments.length} visible`, pts: 4 });
+    }
+
+    // HTML entity artifacts — bots can't process symbols properly (max 8)
+    let entityCount = 0;
+    const entityRe = /&amp;|&lt;|&gt;|&quot;|&#\d+;/;
+    for (const c of comments) {
+      if (entityRe.test(c.body || '')) entityCount++;
+    }
+    if (entityCount > 0) {
+      const pts = entityCount >= 3 ? 8 : 4;
+      raw += pts;
+      signals.push({ name: 'HTML entity artifacts', detail: `${entityCount} comments with &amp; etc.`, pts });
+      comments.filter(c => entityRe.test(c.body || '')).slice(0, 2).forEach(c =>
+        flaggedComments.push({ body: c.body, sub: c.subreddit, reason: 'html-entity' })
+      );
+    }
+
+    // Quote format artifacts — entire comment in blockquote from copy-paste (max 6)
+    let quoteCount = 0;
+    for (const c of comments) {
+      const body = (c.body || '').trim();
+      if (body.startsWith('>') && !body.includes('\n\n') && body.length > 20) {
+        quoteCount++;
+      }
+    }
+    if (quoteCount >= 3) {
+      raw += 6;
+      signals.push({ name: 'Quote format artifacts', detail: `${quoteCount} comments fully quoted`, pts: 6 });
+    } else if (quoteCount >= 1) {
+      raw += 3;
+      signals.push({ name: 'Quote format artifact', detail: `${quoteCount} comment(s) fully quoted`, pts: 3 });
+    }
+
+    // Scam link patterns — .live, .life, .shop domains (max 8)
+    const scamDomainRe = /https?:\/\/[^\s]*\.(live|life|shop|xyz|click|top|buzz|gdn|icu)\b/i;
+    let scamLinkCount = 0;
+    for (const c of comments) {
+      if (scamDomainRe.test(c.body || '')) {
+        scamLinkCount++;
+        flaggedComments.push({ body: c.body, sub: c.subreddit, reason: 'scam-link' });
+      }
+    }
+    if (scamLinkCount > 0) {
+      const pts = scamLinkCount >= 2 ? 8 : 5;
+      raw += pts;
+      signals.push({ name: 'Suspicious link domains', detail: `${scamLinkCount} comments with .live/.shop/etc.`, pts });
+    }
+
+    // Exact duplicate comments — same comment posted multiple times (max 8)
+    const bodySet = new Map();
+    for (const c of comments) {
+      const norm = (c.body || '').trim().toLowerCase();
+      if (norm.length > 10) bodySet.set(norm, (bodySet.get(norm) || 0) + 1);
+    }
+    let dupeCount = 0;
+    for (const [, count] of bodySet) {
+      if (count > 1) dupeCount += count;
+    }
+    if (dupeCount >= 5) {
+      raw += 8;
+      signals.push({ name: 'Many duplicate comments', detail: `${dupeCount} duplicates`, pts: 8 });
+    } else if (dupeCount >= 2) {
+      raw += 4;
+      signals.push({ name: 'Duplicate comments', detail: `${dupeCount} duplicates`, pts: 4 });
     }
   }
 
-  // Subreddit diversity (12 pts)
-  const subs = new Set(comments.map(c => c.subreddit));
-  const divRatio = subs.size / comments.length;
-  if (divRatio < 0.15) {
-    t2 += 12;
-    signals.push({ name: 'Very low sub diversity', detail: `${subs.size} subs / ${comments.length} comments`, pts: 12 });
-  } else if (divRatio < 0.35) {
-    t2 += 6;
-    signals.push({ name: 'Low sub diversity', detail: `${subs.size} subs / ${comments.length} comments`, pts: 6 });
-  }
+  // ---- Apply trust multiplier ----
 
-  // Comment length variance (8 pts)
-  const lens = comments.map(c => (c.body || '').length);
-  const avgLen = lens.reduce((a, b) => a + b, 0) / lens.length;
-  const stddev = Math.sqrt(lens.reduce((s, l) => s + (l - avgLen) ** 2, 0) / lens.length);
-  const cv = avgLen > 0 ? stddev / avgLen : 0;
-  if (cv < 0.2) {
-    t2 += 8;
-    signals.push({ name: 'Uniform comment lengths', detail: `CV ${cv.toFixed(2)}`, pts: 8 });
-  } else if (cv < 0.35) {
-    t2 += 4;
-    signals.push({ name: 'Low length variance', detail: `CV ${cv.toFixed(2)}`, pts: 4 });
-  }
+  const trust = trustMultiplier(ageDays, totalKarma);
+  const finalScore = Math.min(100, Math.round(raw * trust));
 
-  // Median interval between posts (12 pts)
-  if (times.length > 1) {
-    const intervals = [];
-    for (let i = 1; i < times.length; i++) intervals.push(times[i] - times[i - 1]);
-    intervals.sort((a, b) => a - b);
-    const median = intervals[Math.floor(intervals.length / 2)];
-    if (median < 60) {
-      t2 += 12;
-      signals.push({ name: 'Median interval < 1min', detail: `${median}s`, pts: 12 });
-    } else if (median < 180) {
-      t2 += 6;
-      signals.push({ name: 'Median interval < 3min', detail: `${median}s`, pts: 6 });
+  console.log(`[RedBot] Heuristics — u/${d.name} raw=${raw} trust=${trust} final=${finalScore}`, signals);
+
+  // Pick top 5 most suspicious sample comments
+  const uniqueFlagged = [];
+  const seenBodies = new Set();
+  for (const fc of flaggedComments) {
+    const key = (fc.body || '').slice(0, 80);
+    if (!seenBodies.has(key)) {
+      seenBodies.add(key);
+      uniqueFlagged.push(fc);
     }
+    if (uniqueFlagged.length >= 5) break;
   }
-
-  // Active hours / day (10 pts)
-  const activeHours = new Set(comments.map(c => new Date(c.created_utc * 1000).getUTCHours()));
-  if (activeHours.size >= 20) {
-    t2 += 10;
-    signals.push({ name: 'Active nearly 24h', detail: `${activeHours.size}/24 hrs`, pts: 10 });
-  } else if (activeHours.size >= 16) {
-    t2 += 5;
-    signals.push({ name: 'Unusually wide active hours', detail: `${activeHours.size}/24 hrs`, pts: 5 });
-  }
-
-  // Burstiness — max comments in any 5-min window (12 pts)
-  let maxBurst = 0;
-  for (let i = 0; i < times.length; i++) {
-    let count = 1;
-    for (let j = i + 1; j < times.length && times[j] - times[i] <= 300; j++) count++;
-    if (count > maxBurst) maxBurst = count;
-  }
-  if (maxBurst >= 8) {
-    t2 += 12;
-    signals.push({ name: 'Extreme burst (5min)', detail: `${maxBurst} comments`, pts: 12 });
-  } else if (maxBurst >= 5) {
-    t2 += 6;
-    signals.push({ name: 'Comment burst (5min)', detail: `${maxBurst} comments`, pts: 6 });
-  }
-
-  // Links % in comments (10 pts)
-  const linkRe = /https?:\/\/\S+/;
-  const linkCount = comments.filter(c => linkRe.test(c.body || '')).length;
-  const linkRatio = linkCount / comments.length;
-  if (linkRatio > 0.7) {
-    t2 += 10;
-    signals.push({ name: 'Most comments have links', detail: `${Math.floor(linkRatio * 100)}%`, pts: 10 });
-  } else if (linkRatio > 0.4) {
-    t2 += 5;
-    signals.push({ name: 'Many comments have links', detail: `${Math.floor(linkRatio * 100)}%`, pts: 5 });
-  }
-
-  // Max unique subs in any 24h window (10 pts)
-  let maxSubsIn24h = 0;
-  for (let i = 0; i < comments.length; i++) {
-    const windowSubs = new Set();
-    for (let j = i; j < comments.length && comments[j].created_utc - comments[i].created_utc <= 86400; j++) {
-      windowSubs.add(comments[j].subreddit);
-    }
-    if (windowSubs.size > maxSubsIn24h) maxSubsIn24h = windowSubs.size;
-  }
-  if (maxSubsIn24h >= 15) {
-    t2 += 10;
-    signals.push({ name: 'Extreme sub spread (24h)', detail: `${maxSubsIn24h} subs`, pts: 10 });
-  } else if (maxSubsIn24h >= 10) {
-    t2 += 5;
-    signals.push({ name: 'High sub spread (24h)', detail: `${maxSubsIn24h} subs`, pts: 5 });
-  }
-
-  // Hour entropy — uniform posting across hours is bot-like (10 pts)
-  const hourBins = new Array(24).fill(0);
-  comments.forEach(c => hourBins[new Date(c.created_utc * 1000).getUTCHours()]++);
-  let entropy = 0;
-  for (const n of hourBins) {
-    if (n > 0) {
-      const p = n / comments.length;
-      entropy -= p * Math.log2(p);
-    }
-  }
-  if (entropy > 4.0) {
-    t2 += 10;
-    signals.push({ name: 'Very uniform hour spread', detail: `H=${entropy.toFixed(2)}`, pts: 10 });
-  } else if (entropy > 3.5) {
-    t2 += 5;
-    signals.push({ name: 'Uniform hour spread', detail: `H=${entropy.toFixed(2)}`, pts: 5 });
-  }
-
-  const blended = Math.min(100, Math.round(tier1.score * 0.4 + t2 * 0.6));
-  console.log(`[RedBot] Tier 2 — u/${tier1.meta.username} T1=${tier1.score} T2raw=${t2} blended=${blended}`);
 
   return {
-    score: blended,
+    score: finalScore,
     signals,
-    tier: 2,
-    meta: tier1.meta,
-    t1Score: tier1.score,
-    t2Score: t2,
+    tier: 1,
+    meta: {
+      username: d.name,
+      ageDays: Math.floor(ageDays),
+      totalKarma,
+      linkKarma: lk,
+      commentKarma: ck,
+      verified: !!d.has_verified_email,
+      icon: d.icon_img,
+    },
+    heuristicScore: raw,
+    trustMultiplier: trust,
+    _sampleComments: uniqueFlagged,
   };
 }
 
-// ----- Tier 3 — Gemini LLM -----
+// ----- Tier 2 — Gemini LLM -----
 
 async function getApiKey() {
   return new Promise(r =>
@@ -476,12 +679,12 @@ async function getApiKey() {
   );
 }
 
-async function runTier3(aboutPayload, commentsPayload, prior) {
-  console.log(`[RedBot] Tier 3 — u/${prior.meta.username}, calling Gemini`);
+async function runLLM(aboutPayload, commentsPayload, prior) {
+  console.log(`[RedBot] LLM — u/${prior.meta.username}, calling Gemini`);
   const apiKey = await getApiKey();
   if (!apiKey) {
-    console.warn('[RedBot] Tier 3 — skipped, no API key set');
-    return { ...prior, tier: 3, llmSkipped: true, llmReason: 'No API key set' };
+    console.warn('[RedBot] LLM — skipped, no API key set');
+    return { ...prior, tier: 2, llmSkipped: true, llmReason: 'No API key set' };
   }
 
   const samples = commentsPayload.data.children
@@ -494,7 +697,9 @@ async function runTier3(aboutPayload, commentsPayload, prior) {
     }));
 
   const m = prior.meta;
-  const prompt = `You are a Reddit bot-detection expert. Analyze this account and return a bot probability score from 0 (definitely human) to 100 (definitely bot).
+  const prompt = `You are a Reddit bot and AI-content detection expert. Analyze this account and its comments for two things:
+1. Whether this is a bot account (automated posting, spam, manipulation)
+2. Whether the comments appear to be AI-generated (written by ChatGPT, Claude, etc.)
 
 Account metadata:
 - Username: ${m.username}
@@ -508,8 +713,15 @@ ${samples.map((s, i) => `${i + 1}. [r/${s.sub}] (score ${s.score}) "${s.body}"`)
 Prior heuristic signals:
 ${prior.signals.map(s => `- ${s.name}: ${s.detail}`).join('\n')}
 
+When evaluating AI-generated content, look for:
+- Overly polished/formal tone unusual for Reddit (e.g. "It's important to note", "delve", "navigate", "I'd be happy to")
+- Perfectly structured responses with clear intros/conclusions where a human would be casual
+- Hedging language, balanced viewpoints, and lack of personal voice
+- Suspiciously comprehensive answers that read like an encyclopedia
+- Lack of typos, slang, or emotional rawness typical of real Reddit users
+
 Respond with ONLY valid JSON, no markdown fences:
-{"score": <0-100>, "reasoning": "<1-2 sentence explanation>"}`;
+{"score": <0-100>, "reasoning": "<1-2 sentence explanation>", "aiContentScore": <0-100>, "aiContentNote": "<1 sentence about AI writing detection>"}`;
 
   try {
     const res = await fetch(
@@ -519,7 +731,7 @@ Respond with ONLY valid JSON, no markdown fences:
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.2, maxOutputTokens: 256 },
+          generationConfig: { temperature: 0.2, maxOutputTokens: 512 },
         }),
       }
     );
@@ -531,29 +743,41 @@ Respond with ONLY valid JSON, no markdown fences:
     const parsed = JSON.parse(text.replace(/```json\n?|\n?```/g, '').trim());
 
     const llmScore = parsed.score;
+    const aiScore = parsed.aiContentScore ?? 0;
+    const aiNote = parsed.aiContentNote || '';
     const finalScore = Math.min(100, Math.round(prior.score * 0.3 + llmScore * 0.7));
-    console.log(`[RedBot] Tier 3 — u/${prior.meta.username} LLM=${llmScore} final=${finalScore}`, parsed.reasoning);
+    console.log(`[RedBot] LLM — u/${m.username} bot=${llmScore} ai=${aiScore} final=${finalScore}`, parsed.reasoning);
+
+    const llmSignals = [
+      ...prior.signals,
+      { name: 'LLM bot analysis', detail: parsed.reasoning, pts: llmScore },
+    ];
+    if (aiScore > 0) {
+      llmSignals.push({ name: 'AI content detection', detail: `${aiScore}% — ${aiNote}`, pts: aiScore });
+    }
 
     return {
       score: finalScore,
-      signals: [
-        ...prior.signals,
-        { name: 'LLM analysis', detail: parsed.reasoning, pts: llmScore },
-      ],
-      tier: 3,
+      signals: llmSignals,
+      tier: 2,
       meta: m,
-      t1Score: prior.t1Score ?? prior.score,
-      t2Score: prior.t2Score,
-      t3Score: llmScore,
+      heuristicScore: prior.heuristicScore,
+      trustMultiplier: prior.trustMultiplier,
+      llmScore,
       llmReasoning: parsed.reasoning,
+      aiContentScore: aiScore,
+      aiContentNote: aiNote,
+      _sampleComments: prior._sampleComments,
     };
   } catch (err) {
-    console.error('Tier 3 failed:', err);
-    return { ...prior, tier: 3, llmSkipped: true, llmReason: err.message };
+    console.error('[RedBot] LLM failed:', err);
+    return { ...prior, tier: 2, llmSkipped: true, llmReason: err.message };
   }
 }
 
 // ----- Main analysis orchestrator -----
+
+const LLM_THRESHOLD = 40;
 
 async function analyzeUser(username) {
   if (SKIP_USERS.has(username.toLowerCase())) {
@@ -573,28 +797,19 @@ async function analyzeUser(username) {
 
   try {
     const aboutData = await fetchUserAbout(username);
-    const tier1 = runTier1(aboutData);
-
-    if (tier1.score < 10) {
-      console.log(`[RedBot] u/${username} — Tier 1 passed (${tier1.score}%), stopping`);
-      setCache(username, tier1);
-      return tier1;
-    }
-
-    console.log(`[RedBot] u/${username} — Tier 1 flagged (${tier1.score}%), advancing to Tier 2`);
     const commentsData = await fetchUserComments(username);
-    const tier2 = runTier2(commentsData, tier1);
+    const heuristic = runHeuristics(aboutData, commentsData);
 
-    if (tier2.score < 40) {
-      console.log(`[RedBot] u/${username} — Tier 2 passed (${tier2.score}%), stopping`);
-      setCache(username, tier2);
-      return tier2;
+    if (heuristic.score < LLM_THRESHOLD) {
+      console.log(`[RedBot] u/${username} — heuristic=${heuristic.score}%, below LLM threshold, done`);
+      setCache(username, heuristic);
+      return heuristic;
     }
 
-    console.log(`[RedBot] u/${username} — Tier 2 flagged (${tier2.score}%), advancing to Tier 3`);
-    const tier3 = await runTier3(aboutData, commentsData, tier2);
-    setCache(username, tier3);
-    return tier3;
+    console.log(`[RedBot] u/${username} — heuristic=${heuristic.score}%, advancing to LLM`);
+    const llmResult = await runLLM(aboutData, commentsData, heuristic);
+    setCache(username, llmResult);
+    return llmResult;
   } catch (err) {
     console.error(`[RedBot] Analysis failed for u/${username}:`, err.message);
 
@@ -617,20 +832,19 @@ async function analyzeUser(username) {
   }
 }
 
-// ----- Deep analysis (forced Tier 3) -----
+// ----- Deep analysis (forced LLM) -----
 
 async function deepAnalyzeUser(username) {
-  console.log(`[RedBot] Deep analysis — running all tiers for u/${username}`);
+  console.log(`[RedBot] Deep analysis — heuristics + LLM for u/${username}`);
   try {
     const aboutData = await fetchUserAbout(username);
-    const tier1 = runTier1(aboutData);
     const commentsData = await fetchUserComments(username);
-    const tier2 = runTier2(commentsData, tier1);
-    const tier3 = await runTier3(aboutData, commentsData, tier2);
+    const heuristic = runHeuristics(aboutData, commentsData);
+    const llmResult = await runLLM(aboutData, commentsData, heuristic);
 
-    setCache(username, tier3);
-    console.log(`[RedBot] Deep analysis complete for u/${username} — score=${tier3.score}`);
-    return tier3;
+    setCache(username, llmResult);
+    console.log(`[RedBot] Deep analysis complete for u/${username} — score=${llmResult.score}`);
+    return llmResult;
   } catch (err) {
     console.error(`[RedBot] Deep analysis failed for u/${username}:`, err.message);
 
