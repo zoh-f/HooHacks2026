@@ -64,6 +64,41 @@ body {
   font-size: 22px;
   font-weight: 800;
   color: #fff;
+  display: inline-block;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.stat-val.bump {
+  transform: translateY(-8px);
+  opacity: 0.6;
+}
+
+.stat-val.rolling {
+  display: flex;
+  gap: 2px;
+  height: 22px;
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+}
+
+.digit {
+  height: 22px;
+  overflow: hidden;
+  position: relative;
+}
+
+.numbers {
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.35s cubic-bezier(.25,.8,.25,1);
+}
+
+.numbers span {
+  height: 22px;
+  line-height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .val-red    { color: #ef4444; }

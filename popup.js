@@ -88,11 +88,121 @@ async function loadResults() {
   });
 }
 
+// ---- Counter animation helpers ----
+
+function animateCounter(element, start, end, duration = 400) {
+  if (start === end) return; // avoid useless animation
+
+  const startTime = performance.now();
+
+  function update(currentTime) {
+    const progress = Math.min((currentTime - startTime) / duration, 1);
+
+    // smooth ease-out
+    const eased = 1 - Math.pow(1 - progress, 3);
+
+    const value = Math.floor(start + (end - start) * eased);
+    element.textContent = value;
+
+    if (progress < 1) {
+      requestAnimationFrame(update);
+    } else {
+      element.textContent = end;
+    }
+  }
+
+  requestAnimationFrame(update);
+}
+
+// small upward motion for visual feedback
+function bump(el) {
+  el.classList.add('bump');
+  setTimeout(() => el.classList.remove('bump'), 150);
+}
+
+// ---- Rolling counter system ----
+
+const DIGIT_HEIGHT = 22; // adjust if font-size changes
+
+function initRollingCounter(el) {
+  if (el.dataset.rollingInit) return;
+
+  const initial = el.textContent.trim() || "0";
+  el.textContent = "";
+  el.classList.add("rolling");
+
+  buildDigits(el, initial);
+
+  el.dataset.rollingInit = "true";
+}
+
+function buildDigits(container, value) {
+  container.innerHTML = "";
+
+  value.split("").forEach(d => {
+    const digit = document.createElement("div");
+    digit.className = "digit";
+
+    const numbers = document.createElement("div");
+    numbers.className = "numbers";
+
+    // stack 0–9
+    for (let i = 0; i <= 9; i++) {
+      const span = document.createElement("span");
+      span.textContent = i;
+      numbers.appendChild(span);
+    }
+
+    digit.appendChild(numbers);
+    container.appendChild(digit);
+
+    setDigit(numbers, parseInt(d));
+  });
+}
+
+function setDigit(numbersEl, num) {
+  numbersEl.style.transform =
+    `translateY(-${num * DIGIT_HEIGHT}px)`;
+}
+
+function updateRollingCounter(el, newValue) {
+  initRollingCounter(el);
+
+  const valueStr = String(newValue);
+  const digits = el.querySelectorAll(".numbers");
+
+  // rebuild if digit count changed (9 → 10 etc.)
+  if (digits.length !== valueStr.length) {
+    buildDigits(el, valueStr);
+    return;
+  }
+
+  valueStr.split("").forEach((d, i) => {
+    setDigit(digits[i], parseInt(d));
+  });
+}
+
 function setSummary(total, bots, sus, humans) {
-  document.getElementById('statTotal').textContent = total;
-  document.getElementById('statBots').textContent = bots;
-  document.getElementById('statSus').textContent = sus;
-  document.getElementById('statHuman').textContent = humans;
+  updateRollingCounter(
+    document.getElementById('statTotal'), total);
+
+  updateRollingCounter(
+    document.getElementById('statBots'), bots);
+
+  updateRollingCounter(
+    document.getElementById('statSus'), sus);
+
+  updateRollingCounter(
+    document.getElementById('statHuman'), humans);
+}
+
+function updateStat(el, newValue) {
+  const currentValue = parseInt(el.textContent) || 0;
+
+  if (currentValue === newValue) return;
+
+  animateCounter(el, currentValue, newValue);
+  bump(el);
 }
 
 // ---- Trigger a scan on the active tab ----
@@ -221,3 +331,4 @@ function flash(id, temp, original) {
   el.textContent = temp;
   setTimeout(() => { el.textContent = original; }, 1500);
 }
+
