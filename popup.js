@@ -90,8 +90,10 @@ async function loadResults() {
 
       const threadOpen = isRedditThread(currentPageKey);
       const scanInProgress = pending > 0 || isScanning;
+      const hasUsers = entries.length > 0;
 
-      if (threadOpen && scanInProgress) {
+      // show loader ONLY if scanning and nothing displayed yet
+      if (threadOpen && scanInProgress && !hasUsers) {
         showLoader();
       } else {
         hideLoader();

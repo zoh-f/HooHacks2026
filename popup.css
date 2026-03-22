@@ -52,6 +52,47 @@ body {
   border-bottom: 1px solid #1e1e3a;
 }
 
+#totalScanned.stat:hover {
+  background-color: white;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+#totalScanned.stat:hover #statTotal {
+  color: black;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+#totalBots.stat:hover {
+  background-color: #ef4444;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+#totalBots.stat:hover #statBots {
+  color: black;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+#totalSus.stat:hover {
+  background-color: #f59e0b;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+#totalSus.stat:hover #statSus {
+  color: black;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+#totalHuman.stat:hover {
+  background-color: #22c55e;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+#totalHuman.stat:hover #statHuman {
+  color: black;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+
 .stat {
   display: flex;
   flex-direction: column;
@@ -314,7 +355,7 @@ input[type="number"]:focus {
   font-size: 12px;
   outline: none;
   text-align: center;
-  -moz-appearance: textfield;
+  appearance: textfield;
 }
 
 .input-num::-webkit-inner-spin-button,
