@@ -14,7 +14,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ---- Load and display scan results for the active tab ----
 
-let lastTabId = null;
+
+function showLoader() {
+  const el = document.getElementById('scanLoader');
+  if (el) {
+    el.classList.add('loading');
+    el.setAttribute('aria-hidden', 'false');
+  }
+}
+
+function hideLoader() {
+  const el = document.getElementById('scanLoader');
+  if (el) {
+    el.classList.remove('loading');
+    el.setAttribute('aria-hidden', 'true');
+  }
+}
+
 setInterval(loadResults, 500);
 
 function resetAllCounters() {
@@ -24,83 +40,143 @@ function resetAllCounters() {
   resetRollingCounter(document.getElementById('statHuman'));
 }
 
+let lastPageKey = null;
+
+function isRedditThread(url) {
+  if (!url) return false;
+  try {
+    const u = new URL(url);
+    return u.hostname.includes('reddit.com') &&
+           u.pathname.includes('/comments/');
+  } catch {
+    return false;
+  }
+}
+
+let isScanning = false;
+
 async function loadResults() {
-  
-  chrome.runtime.sendMessage({ type: 'getTabResults' }, results => {
-    if (chrome.runtime.lastError) return;
+  chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
+    if (!tabs[0]) return;
 
-    const list = document.getElementById('userList');
-    const entries = Object.entries(results || {});
+    const tab = tabs[0];
+    const currentPageKey = tab.url; 
 
-    if (entries.length === 0) {
-      list.innerHTML = '<p class="empty">Open a Reddit thread to start scanning.</p>';
-      
-      resetRollingCounter(document.getElementById('statTotal'));
-      resetRollingCounter(document.getElementById('statBots'));
-      resetRollingCounter(document.getElementById('statSus'));
-      resetRollingCounter(document.getElementById('statHuman'));
-      
-      setSummary(0, 0, 0, 0);
-      return;
+    if (lastPageKey !== null && lastPageKey !== currentPageKey) {
+      console.log("Page changed → resetting counters");
+
+      resetAllCounters();
+      isScanning = false;   // stop loader state
+      hideLoader();
     }
 
-    entries.sort((a, b) => (b[1].score ?? -1) - (a[1].score ?? -1));
+    lastPageKey = currentPageKey;
 
-    let bots = 0, sus = 0, humans = 0;
-    list.innerHTML = '';
 
-    let rateLimited = 0;
-    for (const [username, r] of entries) {
-      let cat, display;
+    chrome.runtime.sendMessage({ type: 'getTabResults' }, res => {
+      if (chrome.runtime.lastError) return;
 
-      if (r.errorType === 'ratelimited') {
-        cat = 'ratelimited';
-        rateLimited++;
-        display = '\u{23F3} Rate Limited';
-      } else if (r.score < 0 && r.errorType) {
-        cat = 'known';
-        bots++;
-        const labels = { suspended: '\u{1F6A8} Suspended', banned: '\u{1F528} Banned', deleted: '\u{1F6AB} Deleted' };
-        display = labels[r.errorType] || '? Error';
-      } else if (r.score < 0) {
-        continue;
-      } else if (r.knownBot) {
-        cat = 'known'; bots++;
-        display = `${r.score}%`;
-      } else if (r.score >= 40) {
-        cat = 'bot'; bots++;
-        display = `${r.score}%`;
-      } else if (r.score >= 20) {
-        cat = 'suspicious'; sus++;
-        display = `${r.score}%`;
+      const list = document.getElementById('userList');
+      const results =
+        res && typeof res === 'object' && res !== null && 'results' in res
+          ? res.results
+          : res;
+      const pending =
+        res && typeof res === 'object' && res !== null && typeof res.pending === 'number'
+          ? res.pending
+          : 0;
+
+      const entries = Object.entries(results || {});
+
+      const threadOpen = isRedditThread(currentPageKey);
+      const scanInProgress = pending > 0 || isScanning;
+
+      if (threadOpen && scanInProgress) {
+        showLoader();
       } else {
-        cat = 'human'; humans++;
-        display = `${r.score}%`;
+        hideLoader();
       }
 
-      const row = document.createElement('div');
-      row.className = 'uitem';
-      row.innerHTML = `
-        <div class="uinfo">
-          <div class="udot ${cat}"></div>
-          <a class="uname uname-link" href="https://www.reddit.com/user/${username}" target="_blank">u/${username}</a>
-        </div>
-        <div>
-          <span class="uscore ${cat}">${display}</span>
-          ${r.errorType !== 'ratelimited' ? `<span class="utier">${r.tier === 2 ? 'LLM' : 'H'}</span>` : ''}
-        </div>`;
-      list.appendChild(row);
-    }
+      // ---- empty state ----
+      if (entries.length === 0) {
+        if (!threadOpen) hideLoader();
+        list.innerHTML =
+          threadOpen && scanInProgress
+            ? ''
+            : '<p class="empty">Open a Reddit thread to start scanning.</p>';
 
-    if (rateLimited > 0) {
-      const notice = document.createElement('div');
-      notice.className = 'rate-limit-notice';
-      notice.textContent = `Reddit is rate limiting requests. ${rateLimited} user(s) could not be scanned — try again in a minute.`;
-      list.prepend(notice);
-    }
+        setSummary(0, 0, 0, 0);
+        return;
+      }
 
-    setSummary(entries.length, bots, sus, humans);
-  });
+      // ---- normal rendering ----
+      entries.sort((a, b) => (b[1].score ?? -1) - (a[1].score ?? -1));
+
+      let bots = 0, sus = 0, humans = 0;
+      list.innerHTML = '';
+
+      let rateLimited = 0;
+
+      for (const [username, r] of entries) {
+        let cat, display;
+
+        if (r.errorType === 'ratelimited') {
+          cat = 'ratelimited';
+          rateLimited++;
+          display = '\u{23F3} Rate Limited';
+        } else if (r.score < 0 && r.errorType) {
+          cat = 'known';
+          bots++;
+          const labels = {
+            suspended: '\u{1F6A8} Suspended',
+            banned: '\u{1F528} Banned',
+            deleted: '\u{1F6AB} Deleted'
+          };
+          display = labels[r.errorType] || '? Error';
+        } else if (r.score < 0) {
+          continue;
+        } else if (r.knownBot || r.score >= 40) {
+          cat = 'bot'; bots++;
+          display = `${r.score}%`;
+        } else if (r.score >= 20) {
+          cat = 'suspicious'; sus++;
+          display = `${r.score}%`;
+        } else {
+          cat = 'human'; humans++;
+          display = `${r.score}%`;
+        }
+
+        const row = document.createElement('div');
+        row.className = 'uitem';
+        row.innerHTML = `
+          <div class="uinfo">
+            <div class="udot ${cat}"></div>
+            <a class="uname uname-link"
+               href="https://www.reddit.com/user/${username}"
+               target="_blank">u/${username}</a>
+          </div>
+          <div>
+            <span class="uscore ${cat}">${display}</span>
+            ${r.errorType !== 'ratelimited'
+              ? `<span class="utier">T${r.tier}</span>`
+              : ''}
+          </div>`;
+
+        list.appendChild(row);
+      }
+
+      if (rateLimited > 0) {
+        const notice = document.createElement('div');
+        notice.className = 'rate-limit-notice';
+        notice.textContent =
+          `Reddit is rate limiting requests. ${rateLimited} user(s) could not be scanned — try again in a minute.`;
+        list.prepend(notice);
+      }
+
+      if (entries.length > 0) isScanning = false;
+      setSummary(entries.length, bots, sus, humans);
+    }); // ← sendMessage close
+  });   // ← tabs.query close
 }
 
 // ---- Counter animation helpers ----
@@ -231,10 +307,14 @@ function updateStat(el, newValue) {
 function triggerScan() {
   chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
     if (!tabs[0]) return;
+
+    isScanning = true;
+    showLoader();
+
     chrome.tabs.sendMessage(tabs[0].id, { type: 'triggerScan' });
 
     const btn = document.getElementById('btnScan');
-    btn.textContent = 'Scanning\u2026';
+    btn.textContent = 'Scanning…';
     btn.disabled = true;
 
     setTimeout(() => {
@@ -244,7 +324,6 @@ function triggerScan() {
     }, 3000);
   });
 }
-
 // ---- API key management ----
 
 function loadApiKey() {

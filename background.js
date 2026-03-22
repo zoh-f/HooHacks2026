@@ -866,6 +866,8 @@ async function deepAnalyzeUser(username) {
 // ----- Message handling -----
 
 const tabResults = new Map();
+/** @type {Map<number, number>} tabId → scan queue depth (content script) */
+const tabScanPending = new Map();
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'analyzeUser') {
@@ -897,14 +899,28 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'getTabResults') {
     chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
       const id = tabs[0]?.id;
-      sendResponse(tabResults.get(id) || {});
+      sendResponse({
+        results: tabResults.get(id) || {},
+        pending: id != null ? (tabScanPending.get(id) ?? 0) : 0,
+      });
     });
+    return true;
+  }
+
+  if (msg.type === 'scanProgress') {
+    const tabId = sender.tab?.id;
+    if (tabId != null) {
+      if (msg.pending > 0) tabScanPending.set(tabId, msg.pending);
+      else tabScanPending.delete(tabId);
+    }
+    sendResponse({ ok: true });
     return true;
   }
 
   if (msg.type === 'clearCache') {
     cache.clear();
     tabResults.clear();
+    tabScanPending.clear();
     sendResponse({ ok: true });
     return true;
   }
@@ -938,4 +954,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 });
 
-chrome.tabs.onRemoved.addListener(id => tabResults.delete(id));
+chrome.tabs.onRemoved.addListener(id => {
+  tabResults.delete(id);
+  tabScanPending.delete(id);
+});

@@ -39,9 +39,16 @@
       <h2>Scanned Users</h2>
       <button id="btnScan" class="btn btn-primary">Scan Page</button>
     </div>
-    <div id="userList" class="user-list">
-      <p class="empty">Open a Reddit thread to start scanning.</p>
+    <div class="user-list-wrap">
+      <div id="userList" class="user-list">
+        <p class="empty">Open a Reddit thread to start scanning.</p>
+      </div>
+      <div id="scanLoader" class="wrap" aria-hidden="true">
+        <div class="bounceball"></div>
+        <div class="text">NOW LOADING</div>
+      </div>
     </div>
+
   </section>
 
   <section class="section">
