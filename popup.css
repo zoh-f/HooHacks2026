@@ -336,3 +336,19 @@ code {
 }
 
 .hint a:hover { text-decoration: underline; }
+
+/* Insights button */
+.section-insights { padding: 8px 16px 16px; }
+.btn-insights {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 0;
+  cursor: pointer;
+  font-size: 13px;
+  letter-spacing: .3px;
+  transition: opacity .2s;
+}
+.btn-insights:hover { opacity: .88; }

@@ -11,6 +11,34 @@
   const resultCache = new Map();     // username → analysis result
   const pendingElements = new Map(); // username → [elements waiting for badge]
 
+  function currentSubreddit() {
+    const m = location.pathname.match(/^\/r\/([^/]+)/i);
+    return m ? m[1] : null;
+  }
+
+  function getCommentTs(el) {
+    const comment = el.closest('shreddit-comment') || el.closest('.comment');
+    if (!comment) return null;
+    const timeEl = comment.querySelector('faceplate-timeago') || comment.querySelector('time[datetime]');
+    if (!timeEl) return null;
+    const raw = timeEl.getAttribute('ts') || timeEl.getAttribute('datetime');
+    if (!raw) return null;
+    const ms = Number(raw);
+    if (!isNaN(ms) && ms > 1e12) return ms;
+    if (!isNaN(ms) && ms > 1e9) return ms * 1000;
+    const d = new Date(raw);
+    return isNaN(d.getTime()) ? null : d.getTime();
+  }
+
+  function isTopLevelComment(el) {
+    const comment = el.closest('shreddit-comment') || el.closest('.comment');
+    if (!comment) return false;
+    if (comment.tagName?.toLowerCase() === 'shreddit-comment') {
+      return comment.getAttribute('depth') === '0';
+    }
+    return !comment.parentElement?.closest('.comment');
+  }
+
   // ---- Settings (synced from popup) ----
 
   let botAction = 'badge';
@@ -246,6 +274,7 @@
   function applyCommentAction(el, result) {
     if (botAction !== 'minimize') return;
     if (result.score < 0 || result.score < botThreshold) return;
+    if (!isTopLevelComment(el)) return;
 
     const comment =
       el.closest('shreddit-comment') ||
@@ -273,9 +302,19 @@
 
   const scanQueue = [];
   let busy = false;
+  const commentTsMap = new Map();
+  let rlDelay = 0;
+  let rlUntil = 0;
+  let rlTimer = null;
+  let rlCountdown = null;
 
   function attachBadge(el, result) {
     if (el.nextElementSibling?.classList.contains('redbot-badge')) return;
+    const parent = el.parentElement;
+    if (parent && parent.querySelector('.redbot-badge')) {
+      el.setAttribute(ATTR, 'done');
+      return;
+    }
     const badge = makeBadge(result.score, result.tier, result);
     el.after(badge);
     el.setAttribute(ATTR, 'done');
@@ -300,6 +339,7 @@
 
   async function drain() {
     if (busy || scanQueue.length === 0) return;
+    if (rlUntil > Date.now()) return;
     busy = true;
 
     const username = scanQueue.shift();
@@ -309,18 +349,73 @@
       const result = await chrome.runtime.sendMessage({
         type: 'analyzeUser',
         username,
+        subreddit: currentSubreddit(),
+        commentTs: commentTsMap.get(username) || null,
       });
 
+      if (result?.errorType === 'ratelimited') {
+        scanQueue.unshift(username);
+        rlDelay = rlDelay ? Math.min(rlDelay * 2, 120000) : 30000;
+        rlUntil = Date.now() + rlDelay;
+        startRlCountdown();
+        busy = false;
+        return;
+      }
+
+      rlDelay = 0;
+      commentTsMap.delete(username);
       console.log(`[RedBot] u/${username} → score=${result.score} tier=${result.tier}`, result.errorType || '');
       flushPending(username, result);
     } catch (err) {
       console.error(`[RedBot] Error scanning u/${username}:`, err);
+      commentTsMap.delete(username);
       const errResult = { score: -1, tier: 0, signals: [], error: err.message };
       flushPending(username, errResult);
     }
 
     busy = false;
     drain();
+  }
+
+  function startRlCountdown() {
+    convertSpinnersToRl();
+    if (rlCountdown) clearInterval(rlCountdown);
+    if (rlTimer) clearTimeout(rlTimer);
+
+    rlCountdown = setInterval(() => {
+      const secs = Math.max(0, Math.ceil((rlUntil - Date.now()) / 1000));
+      convertSpinnersToRl();
+      document.querySelectorAll('.redbot-rl-wait').forEach(el => {
+        el.title = `Rate limited \u2014 retrying in ${secs}s`;
+      });
+      if (secs <= 0) {
+        clearInterval(rlCountdown);
+        rlCountdown = null;
+      }
+    }, 1000);
+
+    rlTimer = setTimeout(() => {
+      rlUntil = 0;
+      revertRlToSpinners();
+      drain();
+    }, rlDelay);
+  }
+
+  function convertSpinnersToRl() {
+    document.querySelectorAll('.redbot-spin').forEach(el => {
+      el.textContent = '\u23F3';
+      el.classList.remove('redbot-spin');
+      el.classList.add('redbot-ratelimit', 'redbot-rl-wait');
+    });
+  }
+
+  function revertRlToSpinners() {
+    document.querySelectorAll('.redbot-rl-wait').forEach(el => {
+      el.textContent = '\u00B7\u00B7\u00B7';
+      el.title = '';
+      el.classList.remove('redbot-ratelimit', 'redbot-rl-wait');
+      el.classList.add('redbot-spin');
+    });
   }
 
   // ---- Page scanning ----
@@ -331,21 +426,42 @@
     console.log(`[RedBot] Page scan: found ${els.length} username elements`);
 
     const newUsernames = new Set();
+    const processedContainers = new Set();
 
     for (const { el, username } of els) {
       const nextSib = el.nextElementSibling;
-      if (nextSib?.classList.contains('redbot-badge') || nextSib?.classList.contains('redbot-spin')) continue;
+      if (nextSib?.classList.contains('redbot-badge') || nextSib?.classList.contains('redbot-spin') || nextSib?.classList.contains('redbot-rl-wait')) continue;
+
+      const ctr = el.closest('shreddit-comment') || el.closest('shreddit-post') || el.closest('.comment') || el.closest('.Post');
+      if (ctr) {
+        if (processedContainers.has(ctr)) continue;
+        if (ctr.querySelector('.redbot-badge, .redbot-spin, .redbot-rl-wait')) continue;
+        processedContainers.add(ctr);
+      }
 
       if (resultCache.has(username)) {
         attachBadge(el, resultCache.get(username));
         continue;
       }
 
+      if (!commentTsMap.has(username)) {
+        const ts = getCommentTs(el);
+        if (ts) commentTsMap.set(username, ts);
+      }
+
       const spinner = document.createElement('span');
       spinner.className = 'redbot-badge redbot-spin';
-      spinner.textContent = '···';
+      spinner.textContent = '\u00B7\u00B7\u00B7';
       el.after(spinner);
       el.setAttribute(ATTR, 'pending');
+
+      if (rlUntil > Date.now()) {
+        spinner.textContent = '\u23F3';
+        spinner.classList.remove('redbot-spin');
+        spinner.classList.add('redbot-ratelimit', 'redbot-rl-wait');
+        const secs = Math.ceil((rlUntil - Date.now()) / 1000);
+        spinner.title = `Rate limited \u2014 retrying in ${secs}s`;
+      }
 
       if (!pendingElements.has(username)) pendingElements.set(username, []);
       pendingElements.get(username).push({ el, spinner });
@@ -429,6 +545,7 @@
       const result = await chrome.runtime.sendMessage({
         type: 'analyzeUser',
         username,
+        subreddit: currentSubreddit(),
       });
 
       renderProfileResult(panel, username, result);
@@ -459,7 +576,7 @@
         btn.textContent = 'Retrying…';
         btn.disabled = true;
         try {
-          const result = await chrome.runtime.sendMessage({ type: 'analyzeUser', username });
+          const result = await chrome.runtime.sendMessage({ type: 'analyzeUser', username, subreddit: currentSubreddit() });
           renderProfileResult(panel, username, result);
         } catch (err) {
           btn.textContent = 'Still rate limited — try again';
@@ -552,6 +669,7 @@
           const deepResult = await chrome.runtime.sendMessage({
             type: 'deepAnalyze',
             username,
+            subreddit: currentSubreddit(),
           });
           renderProfileResult(panel, username, deepResult);
         } catch (err) {

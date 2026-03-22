@@ -29,7 +29,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["rbot.webp"],
+      "resources": ["rbot.webp", "insights.html", "insights.css", "insights.js"],
       "matches": ["*://*.reddit.com/*"]
     }
   ]

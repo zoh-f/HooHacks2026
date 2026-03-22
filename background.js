@@ -863,6 +863,56 @@ async function deepAnalyzeUser(username) {
   }
 }
 
+// ----- Insights persistence -----
+
+const TIMELINE_CAP = 1000;
+
+async function persistToInsights(username, result, subreddit, commentTs) {
+  if (!subreddit || result.score < 0) return;
+  const sub = subreddit.toLowerCase();
+
+  const stored = await chrome.storage.local.get('insightsDb');
+  const db = stored.insightsDb || {
+    subreddits: {},
+    timeline: [],
+    totalScans: 0,
+    totalBots: 0,
+    firstScan: Date.now(),
+  };
+
+  if (!db.subreddits[sub]) {
+    db.subreddits[sub] = {
+      scans: 0, botCount: 0, suspiciousCount: 0, humanCount: 0,
+      scoreSum: 0, signals: {}, lastSeen: 0,
+    };
+  }
+  const s = db.subreddits[sub];
+  s.scans++;
+  s.scoreSum += result.score;
+  s.lastSeen = Date.now();
+  if (result.score >= 40) { s.botCount++; db.totalBots++; }
+  else if (result.score >= 20) s.suspiciousCount++;
+  else s.humanCount++;
+
+  for (const sig of (result.signals || [])) {
+    s.signals[sig.name] = (s.signals[sig.name] || 0) + 1;
+  }
+
+  db.totalScans++;
+
+  db.timeline.push({
+    ts: commentTs || Date.now(),
+    sub,
+    user: username,
+    score: result.score,
+  });
+  if (db.timeline.length > TIMELINE_CAP) {
+    db.timeline = db.timeline.slice(-TIMELINE_CAP);
+  }
+
+  await chrome.storage.local.set({ insightsDb: db });
+}
+
 // ----- Message handling -----
 
 const tabResults = new Map();
@@ -876,6 +926,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (!tabResults.has(tabId)) tabResults.set(tabId, {});
         tabResults.get(tabId)[msg.username] = result;
       }
+      persistToInsights(msg.username, result, msg.subreddit, msg.commentTs);
       sendResponse(result);
     });
     return true;
@@ -889,6 +940,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (!tabResults.has(tabId)) tabResults.set(tabId, {});
         tabResults.get(tabId)[msg.username] = result;
       }
+      persistToInsights(msg.username, result, msg.subreddit, msg.commentTs);
       sendResponse(result);
     });
     return true;
@@ -934,6 +986,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg.type === 'getRedirectUrl') {
     sendResponse({ url: chrome.identity.getRedirectURL() });
+    return true;
+  }
+
+  if (msg.type === 'getInsightsData') {
+    chrome.storage.local.get('insightsDb', data => {
+      sendResponse(data.insightsDb || null);
+    });
+    return true;
+  }
+
+  if (msg.type === 'clearInsights') {
+    chrome.storage.local.remove('insightsDb', () => sendResponse({ ok: true }));
     return true;
   }
 });

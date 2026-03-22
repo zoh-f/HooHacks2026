@@ -221,3 +221,9 @@ function flash(id, temp, original) {
   el.textContent = temp;
   setTimeout(() => { el.textContent = original; }, 1500);
 }
+
+// ---- Insights ----
+
+document.getElementById('btnInsights').addEventListener('click', () => {
+  chrome.tabs.create({ url: chrome.runtime.getURL('insights.html') });
+});

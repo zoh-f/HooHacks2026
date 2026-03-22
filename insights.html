@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RedBot — AI Safety Insights</title>
+  <link rel="stylesheet" href="insights.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <img src="rbot.webp" class="topbar-logo" alt="RedBot">
+      <div>
+        <h1 class="topbar-title">RedBot Insights</h1>
+        <p class="topbar-sub">AI Safety &amp; Information Integrity Dashboard</p>
+      </div>
+      <button id="btnClearInsights" class="btn-clear" title="Reset all insights data">Reset Data</button>
+    </div>
+  </header>
+
+  <main id="app" class="container">
+    <div id="emptyState" class="empty-state" style="display:none;">
+      <h2>No data yet</h2>
+      <p>Browse Reddit with RedBot enabled to start collecting insights.<br>
+         Scanned users will appear here automatically.</p>
+    </div>
+
+    <!-- Global Stats -->
+    <section id="secGlobal" class="card" style="display:none;">
+      <h2 class="card-title">Global Overview</h2>
+      <div class="stats-row" id="globalStats"></div>
+      <p class="card-hint" id="globalRange"></p>
+    </section>
+
+    <!-- Integrity Scores -->
+    <section id="secIntegrity" class="card" style="display:none;">
+      <h2 class="card-title">Information Integrity Scores</h2>
+      <p class="card-desc">Lower bot prevalence = higher integrity. Subreddits with fewer than 3 scans are excluded.</p>
+      <div id="integrityBars" class="bar-chart"></div>
+    </section>
+
+    <!-- Policy vs Entertainment -->
+    <section id="secComparison" class="card" style="display:none;">
+      <h2 class="card-title">Serious Discussion vs. Entertainment</h2>
+      <p class="card-desc">Comparing average bot scores between subreddits classified as policy/discussion and those classified as entertainment/general.</p>
+      <div class="compare-row" id="compareRow"></div>
+    </section>
+
+    <!-- Temporal Analysis -->
+    <section id="secTemporal" class="card" style="display:none;">
+      <h2 class="card-title">Temporal Activity</h2>
+      <p class="card-desc">Recent scan volume over time. Spikes may indicate coordinated bot activity.</p>
+      <div id="temporalChart" class="temporal-chart"></div>
+    </section>
+
+    <!-- Top Signals -->
+    <section id="secSignals" class="card" style="display:none;">
+      <h2 class="card-title">Most Common Bot Signals</h2>
+      <p class="card-desc">Aggregated across all scanned subreddits.</p>
+      <div id="signalBars" class="bar-chart"></div>
+    </section>
+
+    <!-- Most Compromised -->
+    <section id="secCompromised" class="card" style="display:none;">
+      <h2 class="card-title">Most Compromised Subreddits</h2>
+      <p class="card-desc">Ranked by bot percentage (min 3 scans).</p>
+      <table id="compromisedTable" class="data-table">
+        <thead>
+          <tr>
+            <th>Subreddit</th>
+            <th>Scans</th>
+            <th>Avg Score</th>
+            <th>Bot %</th>
+            <th>Integrity</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script src="insights.js"></script>
+</body>
+</html>
